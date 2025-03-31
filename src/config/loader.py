@@ -4,16 +4,14 @@
 import os
 import yaml
 from dotenv import load_dotenv
-from pydantic import ValidationError
+from pydantic_core import ValidationError
 from typing import Optional
 import logging
-
-# Assuming models are defined in src.core.models
-# Adjust import path if your structure differs
+from src.core.logger import get_logger
 from src.core.models import AppConfig
 
 # Use standard logging temporarily until structlog is configured
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
@@ -72,10 +70,11 @@ def load_configuration(
                 raise
 
         # 4. Prepare data for Pydantic model (merge env vars conceptually)
-        # Pydantic model will automatically look for matching env vars if field is not in yaml
-        # We specifically load keys here for clarity and potential overrides
+        # Start with the loaded YAML content
+        config_data = config_yaml.copy()  # Use a copy to avoid modifying the original dict
 
-        config_data = config_yaml.copy()
+        # Load specific env vars that override
+        # Check for specific known env vars first (like keys/RPCs)
 
         # Manually load potentially sensitive or env-specific keys
         # Ensure general.app_env is set correctly
@@ -118,6 +117,32 @@ def load_configuration(
         dev_wallet_pk = os.getenv("DEV_WALLET_PRIVATE_KEY")
         prod_wallet_pk = os.getenv("PROD_WALLET_PRIVATE_KEY")
 
+        # Now, handle general environment variable overrides using a prefix
+        # Pydantic uses 'APP_' by default, let's stick to that or define our own
+        env_prefix = "APP_"  # Define the prefix
+
+        def set_nested_value(d, keys, value):
+            """Helper to set value in nested dictionary."""
+            for key in keys[:-1]:
+                d = d.setdefault(key, {})
+            # Attempt to convert value based on type hint if possible, otherwise use string
+            # This is a simplified approach. A robust solution might inspect the Pydantic model.
+            try:
+                # Simple type guessing
+                if value.lower() == 'true': value = True
+                elif value.lower() == 'false': value = False
+                elif value.isdigit(): value = int(value)
+                elif '.' in value and all(c.isdigit() or c == '.' for c in value): value = float(value)
+            except AttributeError:  # Value is not a string
+                pass
+            d[keys[-1]] = value
+
+        for key, value in os.environ.items():
+            if key.startswith(env_prefix):
+                parts = key[len(env_prefix):].lower().split('__')  # e.g., APP_GENERAL__LOG_LEVEL -> ['general', 'log_level']
+                if parts:
+                    set_nested_value(config_data, parts, value)
+
         # 5. Validate using Pydantic
         try:
             validated_config = AppConfig(**config_data)
@@ -127,7 +152,7 @@ def load_configuration(
             logger.info("Configuration successfully validated.")
         except ValidationError as e:
             logger.error(f"Configuration validation failed:\n{e}")
-            return None
+            raise e  # Re-raise the exception for tests to catch
 
         # 6. Populate Active Settings based on Environment
         db_config = validated_config.database

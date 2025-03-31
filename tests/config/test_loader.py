@@ -12,12 +12,12 @@ from src.core.models import AppConfig
 def temp_env_file(tmp_path):
     env_content = '''
 # Minimal Dev Env
-DEV_WALLET_PRIVATE_KEY=[1,2,3]
-DEVNET_HTTP_URL=http://dev.rpc
-DEVNET_WSS_URL=ws://dev.rpc
+APP_WALLET__DEV_PRIVATE_KEY=[1,2,3]
+APP_RPC__DEVNET_HTTP_URL=http://dev.rpc
+APP_RPC__DEVNET_WSS_URL=ws://dev.rpc
 
 # Optional keys for testing override
-HELIUS_API_KEY=env_helius_key
+APP_API_KEYS__HELIUS_API_KEY=env_helius_key
 '''
     env_path = tmp_path / ".env.test"
     env_path.write_text(env_content)
@@ -204,8 +204,9 @@ advanced:
     assert isinstance(config, AppConfig)
 
     # Assert default values from YAML are loaded
-    assert config.general.project_name == "Test Sniper Bot"
-    assert config.logging.level == "INFO"
+    assert config.general.app_name == "TestSniper" # Check the correct field
+    assert config.general.log_level == "INFO"
+    assert config.database.db_path == "test_db"
     assert config.rpc.devnet_http == "http://dev.rpc"
     assert config.rpc.devnet_wss == "ws://dev.rpc"
     assert config.wallet.dev_private_key == [1, 2, 3]
@@ -310,11 +311,12 @@ advanced:
     config_path = tmp_path / "config.override.yml"
     config_path.write_text(config_content)
 
-    os.environ['LOG_LEVEL'] = 'DEBUG' # Override logging level
-    os.environ['SLIPPAGE_PERCENT'] = '50.5' # Override slippage
+    # Set environment variables using the APP_ prefix and double underscore for nesting
+    os.environ['APP_GENERAL__LOG_LEVEL'] = 'DEBUG'
+    os.environ['APP_EXECUTION__SLIPPAGE_PERCENT'] = '50.5'
 
     # Set another override via env var, e.g., for API key
-    os.environ['HELIUS_API_KEY'] = 'override_helius_key'
+    os.environ['APP_API_KEYS__HELIUS_API_KEY'] = 'override_helius_key'
 
     # Pass the paths from fixtures/created file to the loader
     config = load_configuration(config_path=str(config_path), env_path=temp_env_file)
@@ -327,29 +329,29 @@ advanced:
     assert config.api_keys.helius_api_key == 'override_helius_key'
 
     # Clean up environment variables set by the test
-    del os.environ['LOG_LEVEL']
-    del os.environ['SLIPPAGE_PERCENT']
-    del os.environ['HELIUS_API_KEY']
+    del os.environ['APP_GENERAL__LOG_LEVEL']
+    del os.environ['APP_EXECUTION__SLIPPAGE_PERCENT']
+    del os.environ['APP_API_KEYS__HELIUS_API_KEY']
 
 def test_missing_required_env_vars(tmp_path):
     """Test validation fails if required env vars are missing for SELF_BUILT provider."""
     # Create an incomplete env file (missing DEV_WALLET_PRIVATE_KEY)
     env_content = '''
     # Missing DEV_WALLET_PRIVATE_KEY
-    DEVNET_HTTP_URL=http://dev.rpc
-    DEVNET_WSS_URL=ws://dev.rpc
+    APP_RPC__DEVNET_HTTP_URL=http://dev.rpc
+    APP_RPC__DEVNET_WSS_URL=ws://dev.rpc
     '''
     env_path = tmp_path / ".env.incomplete"
     env_path.write_text(env_content)
 
     # Assuming load_configuration tries to load default .env files
     # Clear relevant env vars if they exist from previous tests/env
-    if "DEV_WALLET_PRIVATE_KEY" in os.environ:
-        del os.environ["DEV_WALLET_PRIVATE_KEY"]
-    if "DEVNET_HTTP_URL" in os.environ:
-        del os.environ["DEVNET_HTTP_URL"]
-    if "DEVNET_WSS_URL" in os.environ:
-        del os.environ["DEVNET_WSS_URL"]
+    if "APP_WALLET__DEV_PRIVATE_KEY" in os.environ:
+        del os.environ["APP_WALLET__DEV_PRIVATE_KEY"]
+    if "APP_RPC__DEVNET_HTTP_URL" in os.environ:
+        del os.environ["APP_RPC__DEVNET_HTTP_URL"]
+    if "APP_RPC__DEVNET_WSS_URL" in os.environ:
+        del os.environ["APP_RPC__DEVNET_WSS_URL"]
 
     # Use a config that sets SELF_BUILT provider
     # Create a temp config with SELF_BUILT
@@ -503,7 +505,7 @@ def test_missing_required_env_vars(tmp_path):
     with pytest.raises(ValidationError) as excinfo:
         load_configuration(config_path=str(self_built_config_path), env_path=str(env_path))
 
-    assert "DEV_WALLET_PRIVATE_KEY must be set" in str(excinfo.value)
+    assert "APP_WALLET__DEV_PRIVATE_KEY must be set" in str(excinfo.value)
 
 def test_invalid_yaml_format(tmp_path):
     """Test loading with an invalid YAML file."""
