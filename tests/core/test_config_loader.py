@@ -2,8 +2,8 @@ import pytest
 import os
 import yaml
 from pydantic import ValidationError
-from src.core.config_loader import load_config
-from src.core.models import Config
+from core.config_loader import load_config
+from core.models import Config
 
 # Helper to create temp env file
 @pytest.fixture

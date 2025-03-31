@@ -1,22 +1,27 @@
 import logging
 import os
-from src.core.logger import setup_logging
+import structlog
+from core.logger import configure_logging, get_logger
 
-def test_setup_logging_returns_logger():
-    """Test that setup_logging returns a configured logger instance."""
-    logger = setup_logging()
-    assert isinstance(logger, logging.Logger)
-    assert logger.name == "solana_sniper_bot"
-    assert logger.level == logging.INFO # Default level
+def test_configure_logging_defaults():
+    """Test that configure_logging sets up structlog correctly with defaults."""
+    # configure_logging sets up the global structlog config, get_logger gets an instance
+    configure_logging() # Call with defaults
+    logger = get_logger("test_default_logger")
 
-    # Check if file handler was added (optional, depends on implementation)
-    # For now, just check type and name is sufficient for basic test
+    # Check that the logger is a structlog BoundLogger
+    assert isinstance(logger, structlog.stdlib.BoundLogger)
 
-def test_setup_logging_debug_level():
-    """Test that setup_logging sets DEBUG level via environment variable."""
-    os.environ['LOG_LEVEL'] = 'DEBUG'
-    logger = setup_logging()
-    assert logger.level == logging.DEBUG
-    del os.environ['LOG_LEVEL'] # Clean up environment variable
+    # Check that the underlying standard library logger has the default level (INFO)
+    std_lib_logger = logging.getLogger("test_default_logger")
+    assert std_lib_logger.level == logging.INFO
+
+def test_configure_logging_debug_level_override():
+    """Test that configure_logging sets DEBUG level via override argument."""
+    configure_logging(log_level_override='DEBUG')
+    logger = get_logger("test_debug_logger")
+    std_lib_logger = logging.getLogger("test_debug_logger")
+    assert std_lib_logger.level == logging.DEBUG
 
 # Add more tests later if needed (e.g., checking file output if logging to file)
+# Or testing with a mock AppConfig object
