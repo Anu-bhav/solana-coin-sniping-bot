@@ -4,7 +4,7 @@ import tempfile
 import shutil
 
 @pytest.fixture(scope="function")
-def temp_config_file(tmp_path_factory):
+def temp_config_file(tmp_path):
     """Creates a temporary, minimal but valid config file for testing."""
     # Define minimal valid YAML content
     # Include sections that were previously missing based on validation errors
@@ -103,18 +103,15 @@ advanced: # Add a minimal advanced section if needed by model
   transaction_priority_fee_lamports: 5000
   # Add other minimal required fields from AppConfig.AdvancedConfig if necessary
 """
-    # Use tmp_path_factory for better session-scoped temp dirs if needed,
-    # but function-scoped tmp_path from pytest is usually fine.
-    # Using tmp_path provided by pytest fixture implicitly.
-    temp_dir = tmp_path_factory.mktemp("config_test_defaults")
-    config_path = temp_dir / "config.test.yml"
+    # Use tmp_path directly
+    config_path = tmp_path / "config.test.yml"
     config_path.write_text(config_content)
     print(f"\nCreated temp config: {config_path}") # Debug print
     yield str(config_path)
     # Cleanup handled by pytest tmp_path fixtures
 
 @pytest.fixture(scope="function")
-def temp_env_file(tmp_path_factory):
+def temp_env_file(tmp_path):
     """Creates a temporary .env file for testing."""
     env_content = """
 # Basic .env for testing
@@ -129,8 +126,8 @@ HELIUS_API_KEY=env_helius_key
 # Add other keys if needed by tests, e.g., SNIPEROO_API_KEY
 # SNIPEROO_API_KEY=test_sniperoo_key
 """
-    temp_dir = tmp_path_factory.mktemp("env_test")
-    env_path = temp_dir / ".env.test"
+    # Use tmp_path directly
+    env_path = tmp_path / ".env.test"
     env_path.write_text(env_content)
     print(f"\nCreated temp env: {env_path}") # Debug print
     yield str(env_path)
@@ -146,4 +143,3 @@ def set_test_env(monkeypatch):
     # Example:
     # if "SNIPEROO_API_KEY" in os.environ:
     #     monkeypatch.delenv("SNIPEROO_API_KEY", raising=False)
-
