@@ -66,6 +66,7 @@ def load_configuration(
         with open(config_path, "r") as f:
             try:
                 config_yaml = yaml.safe_load(f)
+                print(f"DEBUG: config_yaml immediately after load: {config_yaml}")
                 if not config_yaml:
                     logger.error(
                         f"Configuration file '{config_path}' is empty or invalid yaml."
