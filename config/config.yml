@@ -90,7 +90,7 @@ filtering:
 # --- Transaction Execution Settings ---
 execution:
   enabled: true # Set to false to only detect and filter
-  provider: SELF_BUILT # Options: SELF_BUILT, SNIPEROO_API, JITO_BUNDLER
+  provider: SNIPEROO_API # Options: SELF_BUILT, SNIPEROO_API, JITO_BUNDLER
   buy_amount_sol: 0.005 # Amount of SOL to spend per buy (EXTREMELY SMALL FOR DEVNET)
   slippage_percent: 30.0 # Slippage tolerance percentage (e.g., 30.0 for 30%)
 
