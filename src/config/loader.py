@@ -64,11 +64,17 @@ def load_configuration(
             return None
 
         with open(config_path, "r") as f:
-            config_yaml = yaml.safe_load(f)
-            if not config_yaml:
-                logger.error(f"Configuration file '{config_path}' is empty or invalid.")
-                return None
-            logger.info(f"Loaded base configuration from: {config_path}")
+            try:
+                config_yaml = yaml.safe_load(f)
+                if not config_yaml:
+                    logger.error(
+                        f"Configuration file '{config_path}' is empty or invalid yaml."
+                    )
+                    return None
+                logger.info(f"Loaded base configuration from: {config_path}")
+            except yaml.YAMLError as e:
+                logger.error(f"Error parsing YAML file '{config_path}': {e}", exc_info=True)
+                raise
 
         # 4. Prepare data for Pydantic model (merge env vars conceptually)
         # Pydantic model will automatically look for matching env vars if field is not in yaml

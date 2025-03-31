@@ -294,6 +294,9 @@ def test_missing_required_env_vars(tmp_path, temp_config_file):
       sell_on_liquidity_removal: true
       liquidity_removal_threshold_percent: 50
       min_time_stop_minutes: 10
+    monitoring: # Added missing section
+      health_check_interval_seconds: 60
+      transaction_monitoring_interval_seconds: 5
     """
     self_built_config_path = tmp_path / "self_built_config.yml"
     self_built_config_path.write_text(config_content_self_built)
