@@ -309,8 +309,10 @@ def test_missing_required_env_vars(tmp_path, temp_config_file):
 def test_invalid_yaml_format(tmp_path):
     """Test loading with an invalid YAML file."""
     invalid_yaml_content = '''
-    invalid: yaml
-    '''
+general:
+  app_name: Test
+invalid_indentation_or_structure: { key: value
+'''
     invalid_yaml_path = tmp_path / "invalid_config.yaml"
     invalid_yaml_path.write_text(invalid_yaml_content)
 
