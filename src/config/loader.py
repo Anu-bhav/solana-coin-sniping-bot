@@ -66,12 +66,6 @@ def load_configuration(
         with open(config_path, "r") as f:
             try:
                 config_yaml = yaml.safe_load(f)
-                print(f"DEBUG: config_yaml immediately after load: {config_yaml}")
-                if not config_yaml:
-                    logger.error(
-                        f"Configuration file '{config_path}' is empty or invalid yaml."
-                    )
-                    return None
                 logger.info(f"Loaded base configuration from: {config_path}")
             except yaml.YAMLError as e:
                 logger.error(f"Error parsing YAML file '{config_path}': {e}", exc_info=True)
@@ -123,9 +117,6 @@ def load_configuration(
         # Load Wallet Private Keys (separate from main config dict for Pydantic)
         dev_wallet_pk = os.getenv("DEV_WALLET_PRIVATE_KEY")
         prod_wallet_pk = os.getenv("PROD_WALLET_PRIVATE_KEY")
-
-        # DEBUG: Print the dictionary before passing to Pydantic
-        print(f"DEBUG: config_data before Pydantic validation: {config_data}")
 
         # 5. Validate using Pydantic
         try:

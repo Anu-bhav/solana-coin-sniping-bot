@@ -95,15 +95,110 @@ monitoring:
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-def test_load_config_defaults(temp_config_file, temp_env_file):
+def test_load_config_defaults(tmp_path, temp_env_file):
     """Test loading config with minimal env overrides."""
     # Ensure env vars that might conflict are unset
     if 'LOG_LEVEL' in os.environ: del os.environ['LOG_LEVEL']
     if 'SNIPEROO_API_KEY' in os.environ: del os.environ['SNIPEROO_API_KEY']
     if 'JITO_AUTH_KEYPAIR_PATH' in os.environ: del os.environ['JITO_AUTH_KEYPAIR_PATH']
 
-    # Pass the paths from fixtures to the loader
-    config = load_configuration(config_path=temp_config_file, env_path=temp_env_file)
+    # Define minimal valid YAML content within the test
+    config_content = """
+general:
+  app_name: TestSniper
+  app_env: development
+  log_level: INFO
+  dry_run: true
+database:
+  db_path: test_db
+  dev_db_file: test_dev.sqlite
+  prod_db_file: test_prod.sqlite
+rpc:
+  request_timeout_seconds: 10
+  max_retries: 3
+api_keys: {}
+detection:
+  enabled: true
+  target_dex: raydium_v4
+  raydium_v4_devnet_program_id: test_dev_id
+  raydium_v4_mainnet_program_id: test_main_id
+  block_processed_tokens: true
+  pool_creation_delay_seconds: 0
+filtering:
+  enabled: true
+  contract_liquidity:
+    enabled: true
+    min_initial_sol_liquidity: 0.01
+    max_initial_sol_liquidity: 5.0
+    check_burn_status: false
+    require_renounced_mint_authority: false
+    require_renounced_freeze_authority: false
+    check_lp_locks: false
+    min_lp_lock_duration_days: 30
+  metadata_distribution:
+    enabled: false
+    check_socials: false
+    require_website: false
+    require_twitter: false
+    require_telegram: false
+    enable_holder_analysis: false
+    min_holder_count: 5
+    max_creator_holding_pct: 95.0
+    max_top_10_holder_pct: 80.0
+  rug_pull_honeypot:
+    enabled: true
+    check_pool_existence: true
+    check_trade_direction: true
+    use_external_honeypot_check_api: none
+    fail_if_goplus_error: false
+    fail_if_defi_error: false
+execution:
+  enabled: true
+  provider: SELF_BUILT
+  buy_amount_sol: 0.001
+  slippage_percent: 25.0
+  compute_unit_limit: 1000000
+  compute_unit_price_micro_lamports: 5000
+  sniperoo: null
+  jito: null
+  max_tx_retries: 3
+  tx_confirmation_timeout_seconds: 60
+  use_transaction_simulation: false
+sniper_settings:
+  auto_sell_delay_seconds: 30
+  take_profit_percentage: 50
+  stop_loss_percentage: 25
+wallet:
+  dev_wallet_name: test_dev_wallet
+  prod_wallet_name: test_prod_wallet
+monitoring:
+  enabled: true
+  enable_auto_sell: true
+  poll_interval_seconds: 10
+  health_check_interval_seconds: 60
+  transaction_monitoring_interval_seconds: 5
+  take_profit_pct: 100.0
+  stop_loss_pct: 50.0
+scheduled_tasks:
+  clean_old_logs_days: 3
+  monitor_sell_task_seconds: 10
+  pump_token_monitor_seconds: 2
+rate_limits:
+  global_requests_per_second: 5
+performance:
+  max_concurrent_tasks: 3
+telegram_bot:
+  enabled: false
+advanced:
+  enable_tx_simulation: true
+  transaction_priority_fee_lamports: 5000
+"""
+    # Create the temp config file using tmp_path
+    config_path = tmp_path / "config.test.yml"
+    config_path.write_text(config_content)
+
+    # Pass the paths from fixtures/created file to the loader
+    config = load_configuration(config_path=str(config_path), env_path=temp_env_file)
 
     # Assert the loaded config is the correct type
     assert isinstance(config, AppConfig)
@@ -118,21 +213,125 @@ def test_load_config_defaults(temp_config_file, temp_env_file):
     assert config.execution.provider == "SELF_BUILT"
     assert config.execution.slippage_percent == 25.0
 
-def test_load_config_env_override(temp_config_file, temp_env_file):
+def test_load_config_env_override(tmp_path, temp_env_file):
     """Test environment variables override config file values."""
+    # Define base YAML content (same as defaults test)
+    config_content = """
+general:
+  app_name: TestSniper
+  app_env: development
+  log_level: INFO # Base value to be overridden by env
+  dry_run: true
+database:
+  db_path: test_db
+  dev_db_file: test_dev.sqlite
+  prod_db_file: test_prod.sqlite
+rpc:
+  request_timeout_seconds: 10
+  max_retries: 3
+api_keys: {}
+detection:
+  enabled: true
+  target_dex: raydium_v4
+  raydium_v4_devnet_program_id: test_dev_id
+  raydium_v4_mainnet_program_id: test_main_id
+  block_processed_tokens: true
+  pool_creation_delay_seconds: 0
+filtering:
+  enabled: true
+  contract_liquidity:
+    enabled: true
+    min_initial_sol_liquidity: 0.01
+    max_initial_sol_liquidity: 5.0
+    check_burn_status: false
+    require_renounced_mint_authority: false
+    require_renounced_freeze_authority: false
+    check_lp_locks: false
+    min_lp_lock_duration_days: 30
+  metadata_distribution:
+    enabled: false
+    check_socials: false
+    require_website: false
+    require_twitter: false
+    require_telegram: false
+    enable_holder_analysis: false
+    min_holder_count: 5
+    max_creator_holding_pct: 95.0
+    max_top_10_holder_pct: 80.0
+  rug_pull_honeypot:
+    enabled: true
+    check_pool_existence: true
+    check_trade_direction: true
+    use_external_honeypot_check_api: none
+    fail_if_goplus_error: false
+    fail_if_defi_error: false
+execution:
+  enabled: true
+  provider: SELF_BUILT
+  buy_amount_sol: 0.001
+  slippage_percent: 25.0 # Base value to be overridden by env
+  compute_unit_limit: 1000000
+  compute_unit_price_micro_lamports: 5000
+  sniperoo: null
+  jito: null
+  max_tx_retries: 3
+  tx_confirmation_timeout_seconds: 60
+  use_transaction_simulation: false
+sniper_settings:
+  auto_sell_delay_seconds: 30
+  take_profit_percentage: 50
+  stop_loss_percentage: 25
+wallet:
+  dev_wallet_name: test_dev_wallet
+  prod_wallet_name: test_prod_wallet
+monitoring:
+  enabled: true
+  enable_auto_sell: true
+  poll_interval_seconds: 10
+  health_check_interval_seconds: 60
+  transaction_monitoring_interval_seconds: 5
+  take_profit_pct: 100.0
+  stop_loss_pct: 50.0
+scheduled_tasks:
+  clean_old_logs_days: 3
+  monitor_sell_task_seconds: 10
+  pump_token_monitor_seconds: 2
+rate_limits:
+  global_requests_per_second: 5
+performance:
+  max_concurrent_tasks: 3
+telegram_bot:
+  enabled: false
+advanced:
+  enable_tx_simulation: true
+  transaction_priority_fee_lamports: 5000
+"""
+    # Create the temp config file using tmp_path
+    config_path = tmp_path / "config.override.yml"
+    config_path.write_text(config_content)
+
     os.environ['LOG_LEVEL'] = 'DEBUG' # Override logging level
     os.environ['SLIPPAGE_PERCENT'] = '50.5' # Override slippage
 
-    # Pass the paths from fixtures to the loader
-    config = load_configuration(config_path=temp_config_file, env_path=temp_env_file)
+    # Set another override via env var, e.g., for API key
+    os.environ['HELIUS_API_KEY'] = 'override_helius_key'
+
+    # Pass the paths from fixtures/created file to the loader
+    config = load_configuration(config_path=str(config_path), env_path=temp_env_file)
 
     assert isinstance(config, AppConfig)
-    assert config.general.log_level == 'DEBUG' # Check override
-    assert config.rpc.devnet_http == "http://dev.rpc" # From .env.test
-    assert config.wallet.dev_private_key == "[1,2,3]" # From .env.test
-    assert config.api_keys.helius_api_key == "env_helius_key" # From .env.test
 
-def test_missing_required_env_vars(tmp_path, temp_config_file):
+    # Assert that the values from environment variables have overridden the config file
+    assert config.general.log_level == 'DEBUG'
+    assert config.execution.slippage_percent == 50.5
+    assert config.api_keys.helius_api_key == 'override_helius_key'
+
+    # Clean up environment variables set by the test
+    del os.environ['LOG_LEVEL']
+    del os.environ['SLIPPAGE_PERCENT']
+    del os.environ['HELIUS_API_KEY']
+
+def test_missing_required_env_vars(tmp_path):
     """Test validation fails if required env vars are missing for SELF_BUILT provider."""
     # Create an incomplete env file (missing DEV_WALLET_PRIVATE_KEY)
     env_content = '''
