@@ -1,1 +1,75 @@
+# config/config.yml
+general:
+  app_name: SolanaPumpSniper
+  # app_env is set by loader based on APP_ENV environment variable
+  log_level: INFO # Or DEBUG for more verbose logs during development
+  dry_run: true   # IMPORTANT: Keep true for initial testing!
 
+database:
+  db_path: db
+  dev_db_file: devnet_sniper.sqlite
+  prod_db_file: mainnet_sniper.sqlite
+
+rpc:
+  # URLs can be loaded from .env.* or specified here if not sensitive
+  # devnet_http_url: SET_IN_ENV_OR_HERE
+  # devnet_wss_url: SET_IN_ENV_OR_HERE
+  # mainnet_http_url: SET_IN_ENV_OR_HERE (for later)
+  # mainnet_wss_url: SET_IN_ENV_OR_HERE (for later)
+  request_timeout_seconds: 15
+  max_retries: 3
+
+api_keys:
+  # Keys are preferably loaded from .env.*
+  # helius_api_key: null
+  # dexscreener_api_key: null
+  # birdeye_api_key: null
+  pass # API keys section is optional if all loaded from env
+
+detection:
+  enabled: true
+  target_dex: raydium_v4 # Or pumpswap / both, needs research for IDs
+  # UPDATE WITH ACTUAL DEVNET IDS AFTER RESEARCH
+  raydium_v4_program_id: "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" # EXAMPLE MAINNET ID
+  pumpswap_program_id: null # Needs Devnet research
+  block_processed_tokens: true
+
+filtering:
+  enabled: true
+  contract_liquidity:
+    enabled: true
+    min_initial_sol_liquidity: 0.1
+    max_initial_sol_liquidity: 10.0 # Keep low for Devnet testing
+    check_burn_status: false
+    require_renounced_mint_authority: false
+    require_renounced_freeze_authority: false
+  metadata_distribution:
+    enabled: true # Will likely fail without paid APIs
+    check_socials: false
+    min_holder_count: null
+    max_creator_holding_pct: 95.0
+  rug_pull_honeypot:
+    enabled: true
+    use_external_honeypot_check_api: "none"
+  # Add more filter groups later
+
+execution:
+  enabled: true
+  provider: SELF_BUILT
+  buy_amount_sol: 0.005 # Start extremely small on Devnet
+  slippage_percent: 30.0
+  compute_unit_limit: 1_400_000
+  compute_unit_price_micro_lamports: 10000 # Adjust based on Devnet conditions
+  max_tx_retries: 2
+  tx_confirmation_timeout_seconds: 90
+  # sniperoo_api_key_env_var: SNIPEROO_API_KEY # If using Sniperoo
+  # sniperoo_base_url: null
+
+monitoring:
+  enabled: true
+  enable_auto_sell: true # If using SELF_BUILT
+  poll_interval_seconds: 15
+  take_profit_pct: 100.0 # 2x
+  stop_loss_pct: 50.0
+  enable_time_stop: false
+  time_stop_minutes: 60
