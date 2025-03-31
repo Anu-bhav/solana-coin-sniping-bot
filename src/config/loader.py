@@ -17,10 +17,17 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-def load_configuration() -> Optional[AppConfig]:
+def load_configuration(
+    config_path: str = "config/config.yml",
+    env_path: Optional[str] = None,
+) -> Optional[AppConfig]:
     """
     Loads configuration from environment variables and YAML file,
     validates it using Pydantic models, and populates active settings.
+
+    Args:
+        config_path (str): Path to the YAML configuration file.
+        env_path (Optional[str]): Path to the environment file. If None, uses default logic.
 
     Returns:
         Optional[AppConfig]: The validated configuration object or None if loading/validation fails.
@@ -31,28 +38,37 @@ def load_configuration() -> Optional[AppConfig]:
         logger.info(f"Loading configuration for environment: {app_env}")
 
         # 2. Load .env file
-        env_file = f".env.{app_env}"
-        if not os.path.exists(env_file):
-            logger.warning(
-                f"Environment file '{env_file}' not found. Relying on system env vars."
-            )
-            load_dotenv()  # Load system env vars if file doesn't exist
+        if env_path:
+            # Use provided env_path directly
+            if not os.path.exists(env_path):
+                logger.warning(f"Provided environment file '{env_path}' not found. Relying on system env vars.")
+                load_dotenv()
+            else:
+                load_dotenv(dotenv_path=env_path)
+                logger.info(f"Loaded environment variables from: {env_path}")
         else:
-            load_dotenv(dotenv_path=env_file)
-            logger.info(f"Loaded environment variables from: {env_file}")
+            # Default behavior: find .env based on APP_ENV
+            env_file = f".env.{app_env}"
+            if not os.path.exists(env_file):
+                logger.warning(
+                    f"Environment file '{env_file}' not found. Relying on system env vars."
+                )
+                load_dotenv()  # Load system env vars if file doesn't exist
+            else:
+                load_dotenv(dotenv_path=env_file)
+                logger.info(f"Loaded environment variables from: {env_file}")
 
         # 3. Load config.yml
-        config_file = "config/config.yml"
-        if not os.path.exists(config_file):
-            logger.error(f"Configuration file '{config_file}' not found.")
+        if not os.path.exists(config_path):
+            logger.error(f"Configuration file '{config_path}' not found.")
             return None
 
-        with open(config_file, "r") as f:
+        with open(config_path, "r") as f:
             config_yaml = yaml.safe_load(f)
             if not config_yaml:
-                logger.error(f"Configuration file '{config_file}' is empty or invalid.")
+                logger.error(f"Configuration file '{config_path}' is empty or invalid.")
                 return None
-            logger.info(f"Loaded base configuration from: {config_file}")
+            logger.info(f"Loaded base configuration from: {config_path}")
 
         # 4. Prepare data for Pydantic model (merge env vars conceptually)
         # Pydantic model will automatically look for matching env vars if field is not in yaml
