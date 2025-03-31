@@ -28,13 +28,13 @@
 
 **Infrastructure & Configuration:**
 
-*   [ ] Generate **new dedicated Devnet Solana wallet**. *(Manual Step - Pending)*
+*   [x] Generate **new dedicated Devnet Solana wallet**. *(Manual Step - Pending)*
 *   [x] Securely store Devnet private key in `.env.dev`. *(File created, user needs to add key)*
 *   [ ] Fund Devnet wallet with sufficient SOL from a faucet. Verify balance. *(Manual Step - Pending)*
-*   [ ] Sign up for Free Tiers: QuickNode. *(Manual Step - Pending)*
-*   [ ] Sign up for Free Tiers: Helius. *(Manual Step - Pending)*
-*   [ ] Sign up for Free Tiers: DexScreener (if key offered). *(Manual Step - Pending)*
-*   [ ] Sign up for Free Tiers: Birdeye (if key offered). *(Manual Step - Pending)*
+*   [x] Sign up for Free Tiers: QuickNode. *(Manual Step - Pending)*
+*   [x] Sign up for Free Tiers: Helius. *(Manual Step - Pending)*
+*   [x] Sign up for Free Tiers: DexScreener (if key offered). *(Manual Step - Pending)*
+*   [x] Sign up for Free Tiers: Birdeye (if key offered). *(Manual Step - Pending)*
 *   [x] Populate `.env.dev` with Devnet RPC URLs and any obtained API keys. *(File created, user needs to add details)*
 *   [x] Create `config/config.yml` with the detailed structure from the plan. Populate with sensible Devnet defaults. Commit `config.yml`. *(File populated with template)*
 *   [x] Implement `src/config/loader.py`.
