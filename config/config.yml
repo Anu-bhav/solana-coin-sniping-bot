@@ -1,75 +1,143 @@
-# config/config.yml
+# config/config.yml - Comprehensive Template
+# --- General Settings ---
 general:
   app_name: SolanaPumpSniper
-  # app_env is set by loader based on APP_ENV environment variable
-  log_level: INFO # Or DEBUG for more verbose logs during development
-  dry_run: true   # IMPORTANT: Keep true for initial testing!
+  # app_env is set by loader based on APP_ENV environment variable (development or production)
+  log_level: INFO # Or DEBUG, WARNING, ERROR
+  dry_run: true   # CRITICAL: Keep true for testing! False = Live Trading.
 
+# --- Database Settings ---
 database:
-  db_path: db
+  db_path: db # Relative path to db folder
   dev_db_file: devnet_sniper.sqlite
   prod_db_file: mainnet_sniper.sqlite
 
+# --- RPC Settings ---
 rpc:
-  # URLs can be loaded from .env.* or specified here if not sensitive
-  # devnet_http_url: SET_IN_ENV_OR_HERE
-  # devnet_wss_url: SET_IN_ENV_OR_HERE
-  # mainnet_http_url: SET_IN_ENV_OR_HERE (for later)
-  # mainnet_wss_url: SET_IN_ENV_OR_HERE (for later)
+  # Core URLs are loaded from .env.* files (DEVNET_HTTP_URL, etc.)
+  # You can optionally override or provide specific provider URLs here:
+  # helius_devnet_http_url: https://devnet.helius-rpc.com/?api-key=YOUR_KEY_IF_NEEDED
+  # helius_mainnet_http_url: https://mainnet.helius-rpc.com/?api-key=YOUR_KEY_IF_NEEDED
+  # quicknode_devnet_http_url: https://example-devnet.solana-devnet.quiknode.pro/YOUR_KEY/
+  # quicknode_mainnet_http_url: https://example.solana-mainnet.quiknode.pro/YOUR_KEY/
+
+  # Connection settings
   request_timeout_seconds: 15
   max_retries: 3
 
+# --- API Keys Settings ---
 api_keys:
-  # Keys are preferably loaded from .env.*
-  # helius_api_key: null
-  # dexscreener_api_key: null
-  # birdeye_api_key: null
-  pass # API keys section is optional if all loaded from env
+  # ALL API Keys are preferably loaded from .env.* files
+  # (HELIUS_API_KEY, DEXSCREENER_API_KEY, BIRDEYE_API_KEY, GOPLUS_API_KEY, DEFI_API_KEY, SNIPEROO_API_KEY)
+  # This section is mainly a placeholder; loader prioritizes .env values.
+  pass # Leave as pass if all keys are in .env
 
+# --- Token Detection Settings ---
 detection:
   enabled: true
-  target_dex: raydium_v4 # Or pumpswap / both, needs research for IDs
-  # UPDATE WITH ACTUAL DEVNET IDS AFTER RESEARCH
-  raydium_v4_program_id: "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" # EXAMPLE MAINNET ID
-  pumpswap_program_id: null # Needs Devnet research
-  block_processed_tokens: true
+  target_dex: raydium_v4 # Options: raydium_v4, pumpswap, both
+  # --- DEX Program IDs (Verify these carefully!) ---
+  # Raydium Liquidity Pool v4 Program ID
+  raydium_v4_devnet_program_id: "HWy1jotH36cWeFxYHpgi8hzn7EVGKfom1ueqB9u93dAU" # Example Raydium Devnet ID
+  raydium_v4_mainnet_program_id: "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" # Raydium Mainnet ID
+  # PumpSwap AMM Program ID (Needs Devnet Research)
+  pumpswap_devnet_program_id: null # Find and add Devnet ID if targeting PumpSwap
+  pumpswap_mainnet_program_id: null # Find and add Mainnet ID if targeting PumpSwap
+  # --- Behavior ---
+  block_processed_tokens: true # Use DB to avoid reprocessing known tokens
+  pool_creation_delay_seconds: 0 # Optional delay (seconds) after pool detected before filtering
 
+# --- Token Filtering Pipeline --- (Run in order)
 filtering:
   enabled: true
+
+  # 1. Contract & Liquidity Checks
   contract_liquidity:
     enabled: true
-    min_initial_sol_liquidity: 0.1
-    max_initial_sol_liquidity: 10.0 # Keep low for Devnet testing
-    check_burn_status: false
-    require_renounced_mint_authority: false
-    require_renounced_freeze_authority: false
+    min_initial_sol_liquidity: 0.1 # Min SOL paired at creation (Devnet: low, Mainnet: higher)
+    max_initial_sol_liquidity: 10.0 # Max SOL paired at creation (Avoid whales? Devnet: low)
+    check_burn_status: false # Check if LP tokens are burned (Needs reliable method/API)
+    require_renounced_mint_authority: false # Check if token mint authority is revoked
+    require_renounced_freeze_authority: false # Check if token freeze authority is revoked
+    check_lp_locks: false # Check if LP tokens are locked (Needs reliable API, e.g., Streamflow, RugCheck)
+    min_lp_lock_duration_days: 90 # Minimum lock duration if check_lp_locks is true
+
+  # 2. Metadata & Distribution Checks
   metadata_distribution:
-    enabled: true # Will likely fail without paid APIs
-    check_socials: false
-    min_holder_count: null
-    max_creator_holding_pct: 95.0
+    enabled: false # Often needs APIs / may slow down detection significantly
+    check_socials: false # Requires web scraping or API (e.g., Helius)
+    require_website: false
+    require_twitter: false
+    require_telegram: false
+    # Holder analysis (Needs reliable API: Helius DAS/Geyser, Birdeye)
+    enable_holder_analysis: false
+    min_holder_count: 10 # Minimum number of unique holders
+    max_creator_holding_pct: 90.0 # Max % the creator can hold
+    max_top_10_holder_pct: 70.0 # Max % the top 10 wallets hold combined
+
+  # 3. Rug-Pull / Honeypot Checks
   rug_pull_honeypot:
     enabled: true
-    use_external_honeypot_check_api: "none"
-  # Add more filter groups later
+    # Basic checks (run locally)
+    check_pool_existence: true # Verify the detected pool address actually exists
+    check_trade_direction: true # Check if SOL -> Token swap seems possible (basic simulation or pool state)
+    # External API Checks (Requires API Keys configured in .env)
+    use_external_honeypot_check_api: "none" # Options: none, goplus, defi, both
+    fail_if_goplus_error: false # Stop processing token if GoPlus API call fails?
+    fail_if_defi_error: false # Stop processing token if De.Fi API call fails?
 
+  # Add more filter stages here later if needed (e.g., velocity, volume)
+
+# --- Transaction Execution Settings ---
 execution:
-  enabled: true
-  provider: SELF_BUILT
-  buy_amount_sol: 0.005 # Start extremely small on Devnet
-  slippage_percent: 30.0
-  compute_unit_limit: 1_400_000
-  compute_unit_price_micro_lamports: 10000 # Adjust based on Devnet conditions
-  max_tx_retries: 2
-  tx_confirmation_timeout_seconds: 90
-  # sniperoo_api_key_env_var: SNIPEROO_API_KEY # If using Sniperoo
-  # sniperoo_base_url: null
+  enabled: true # Set to false to only detect and filter
+  provider: SELF_BUILT # Options: SELF_BUILT, SNIPEROO_API, JITO_BUNDLER
+  buy_amount_sol: 0.005 # Amount of SOL to spend per buy (EXTREMELY SMALL FOR DEVNET)
+  slippage_percent: 30.0 # Slippage tolerance percentage (e.g., 30.0 for 30%)
 
+  # --- Settings for provider: SELF_BUILT ---
+  compute_unit_limit: 1_400_000 # Solana Compute Budget Unit Limit
+  compute_unit_price_micro_lamports: 10000 # Priority Fee per Compute Unit (adjust based on network)
+
+  # --- Settings for provider: SNIPEROO_API ---
+  sniperoo:
+    base_url: "https://api.sniperoo.com" # Check correct API endpoint
+    # SNIPEROO_API_KEY must be set in .env
+
+  # --- Settings for provider: JITO_BUNDLER ---
+  jito:
+    # JITO_BLOCK_ENGINE_URL and JITO_AUTH_KEYPAIR_PATH must be set in .env
+    tip_lamports: 10000 # Lamports to tip Jito validator
+
+  # --- General Transaction Settings ---
+  max_tx_retries: 2 # Number of times to retry sending a failed transaction
+  tx_confirmation_timeout_seconds: 90 # How long to wait for transaction confirmation
+  use_transaction_simulation: false # Use simulateTransaction RPC before sending (increases latency but can catch errors)
+
+# --- Position Monitoring & Auto-Sell Settings ---
 monitoring:
-  enabled: true
-  enable_auto_sell: true # If using SELF_BUILT
-  poll_interval_seconds: 15
-  take_profit_pct: 100.0 # 2x
-  stop_loss_pct: 50.0
-  enable_time_stop: false
-  time_stop_minutes: 60
+  enabled: true # Set to false to only buy, not monitor/sell
+  # Note: Auto-Sell is primarily for SELF_BUILT execution. Check if SNIPEROO/JITO handle sells.
+  enable_auto_sell: true
+  poll_interval_seconds: 15 # How often to check price and P/L of open positions
+
+  # --- Basic Take Profit / Stop Loss ---
+  take_profit_pct: 100.0 # Sell when price increases by this % (e.g., 100.0 for 2x)
+  stop_loss_pct: 50.0 # Sell when price decreases by this % relative to buy price
+
+  # --- Advanced Selling Strategies (Optional) ---
+  # Trailing Stop Loss
+  enable_trailing_stop_loss: false
+  trailing_stop_loss_trigger_pct: 50.0 # Activate TSL when gain reaches this %
+  trailing_stop_loss_delta_pct: 15.0 # Sell if price drops this % from highest point after trigger
+
+  # Multi-Level Take Profit (Sell portions at different targets)
+  enable_multi_level_take_profit: false
+  # Example: Sell 50% at 100% gain, sell remaining 50% at 200% gain
+  take_profit_levels: # List of dictionaries: {pct: gain_target, amount_pct: position_size_to_sell}
+    - { pct: 100.0, amount_pct: 50.0 }
+    - { pct: 200.0, amount_pct: 50.0 }
+
+  # --- Time Stop ---
+  enable_time_stop: false # Sell position after a certain time regardless of P/L
+  time_stop_minutes: 60 # Time in minutes after buy to trigger time stop
