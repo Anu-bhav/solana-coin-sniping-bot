@@ -4,46 +4,46 @@
 
 **General:**
 
-*   [ ] Confirm understanding of Phase 0 Goals and Deliverables.
-*   [ ] Document Scope & Constraints formally (in README or design doc).
-*   [ ] Document initial Devnet Success Criteria.
+*   [ ] Confirm understanding of Phase 0 Goals and Deliverables. *(Assumed complete via conversation)*
+*   [ ] Document Scope & Constraints formally (in README or design doc). *(Partially done in README)*
+*   [ ] Document initial Devnet Success Criteria. *(Deferred - Requires thought)*
 
 **Research:**
 
-*   [ ] Document findings on Solana fundamentals (Accounts, TXs, Fees, etc.).
-*   [ ] Document findings on Pump.fun mechanics (Graduation, Contract Patterns).
-*   [ ] **Identify and Document precise Devnet Program IDs** for target DEX(s) (Raydium LP v4 / PumpSwap AMM).
-*   [ ] **Analyze and Document structure** of target DEX `Initialize` and `Swap` instructions on Devnet.
-*   [ ] Compile list of common Solana scam vectors and potential detection ideas.
+*   [ ] Document findings on Solana fundamentals (Accounts, TXs, Fees, etc.). *(User knowledge assumed)*
+*   [ ] Document findings on Pump.fun mechanics (Graduation, Contract Patterns). *(User knowledge assumed)*
+*   [ ] **Identify and Document precise Devnet Program IDs** for target DEX(s) (Raydium LP v4 / PumpSwap AMM). *(Manual Step - Pending)*
+*   [ ] **Analyze and Document structure** of target DEX `Initialize` and `Swap` instructions on Devnet. *(Manual Step - Pending)*
+*   [ ] Compile list of common Solana scam vectors and potential detection ideas. *(Deferred - For Filtering Phase)*
 
 **Environment & Dependencies:**
 
-*   [ ] Install correct Python version (3.9+).
-*   [ ] Create and activate Python virtual environment (`venv`).
-*   [ ] Initialize Git repository.
-*   [ ] Create comprehensive `.gitignore` file (including `.env*`, `__pycache__/`, `logs/`, `db/*.sqlite`).
-*   [ ] Install all dependencies listed in Tech Stack via `pip`.
-*   [ ] Generate and commit `requirements.txt` or `pyproject.toml`.
-*   [ ] Install and configure Linter (`ruff`) and Formatter (`black`). Run initial format/lint check.
+*   [x] Install correct Python version (3.9+). *(User confirmed)*
+*   [x] Create and activate Python virtual environment (`venv`).
+*   [x] Initialize Git repository.
+*   [x] Create comprehensive `.gitignore` file (including `.env*`, `__pycache__/`, `logs/`, `db/*.sqlite`).
+*   [x] Install all dependencies listed in Tech Stack via `pip` (using `uv`).
+*   [x] Generate and commit `requirements.txt` or `pyproject.toml`.
+*   [x] Install and configure Linter (`ruff`) and Formatter (`black`). Run initial format/lint check.
 
 **Infrastructure & Configuration:**
 
-*   [ ] Generate **new dedicated Devnet Solana wallet**.
-*   [ ] Securely store Devnet private key in `.env.dev`.
-*   [ ] Fund Devnet wallet with sufficient SOL from a faucet. Verify balance.
-*   [ ] Sign up for Free Tiers: QuickNode.
-*   [ ] Sign up for Free Tiers: Helius.
-*   [ ] Sign up for Free Tiers: DexScreener (if key offered).
-*   [ ] Sign up for Free Tiers: Birdeye (if key offered).
-*   [ ] Populate `.env.dev` with Devnet RPC URLs and any obtained API keys.
-*   [ ] Create `config/config.yml` with the detailed structure from the plan. Populate with sensible Devnet defaults. Commit `config.yml`.
-*   [ ] Implement `src/config/loader.py`.
-    *   [ ] Define comprehensive `pydantic` models for the entire config structure.
-    *   [ ] Implement loading of `.env` based on `APP_ENV`.
-    *   [ ] Implement loading of `config.yml`.
-    *   [ ] Implement merging/handling of secrets from `.env`.
-    *   [ ] Implement **rigorous validation** using `pydantic` models.
-    *   [ ] **Testing:** Write **unit tests** (`tests/unit/config/test_loader.py`) for `loader.py`:
+*   [ ] Generate **new dedicated Devnet Solana wallet**. *(Manual Step - Pending)*
+*   [x] Securely store Devnet private key in `.env.dev`. *(File created, user needs to add key)*
+*   [ ] Fund Devnet wallet with sufficient SOL from a faucet. Verify balance. *(Manual Step - Pending)*
+*   [ ] Sign up for Free Tiers: QuickNode. *(Manual Step - Pending)*
+*   [ ] Sign up for Free Tiers: Helius. *(Manual Step - Pending)*
+*   [ ] Sign up for Free Tiers: DexScreener (if key offered). *(Manual Step - Pending)*
+*   [ ] Sign up for Free Tiers: Birdeye (if key offered). *(Manual Step - Pending)*
+*   [x] Populate `.env.dev` with Devnet RPC URLs and any obtained API keys. *(File created, user needs to add details)*
+*   [x] Create `config/config.yml` with the detailed structure from the plan. Populate with sensible Devnet defaults. Commit `config.yml`. *(File populated with template)*
+*   [x] Implement `src/config/loader.py`.
+    *   [x] Define comprehensive `pydantic` models for the entire config structure.
+    *   [x] Implement loading of `.env` based on `APP_ENV`.
+    *   [x] Implement loading of `config.yml`.
+    *   [x] Implement merging/handling of secrets from `.env`.
+    *   [x] Implement **rigorous validation** using `pydantic` models.
+    *   [ ] **Testing:** Write **unit tests** (`tests/unit/config/test_loader.py`) for `loader.py`: *(Pending)*
         *   [ ] Test successful loading with valid Devnet config/env.
         *   [ ] Test successful loading with valid Prod config/env (using dummy prod env).
         *   [ ] Test failure on missing `config.yml`.
@@ -52,12 +52,12 @@
         *   [ ] Test failure on incorrect data types in config (pydantic validation).
         *   [ ] Test failure on missing required environment variables (`.env`).
         *   [ ] Test correct selection of network settings based on `APP_ENV`.
-*   [ ] Implement `src/core/logger.py` using `structlog`.
-    *   [ ] Configure based on loaded config (level, file, format).
-    *   [ ] **Testing:** Write simple **unit test** (`tests/unit/core/test_logger.py`) to verify logger initialization and basic message logging.
-*   [ ] Create full project directory structure.
+*   [x] Implement `src/core/logger.py` using `structlog`.
+    *   [x] Configure based on loaded config (level, file, format).
+    *   [ ] **Testing:** Write simple **unit test** (`tests/unit/core/test_logger.py`) to verify logger initialization and basic message logging. *(Pending)*
+*   [x] Create full project directory structure.
 
 **Completion:**
 
 *   [ ] All items above checked.
-*   [ ] Phase 0 deliverables are ready and documented/committed.
+*   [x] Phase 0 deliverables are ready and documented/committed. *(Code/Files part done)*
