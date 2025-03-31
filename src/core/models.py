@@ -57,6 +57,7 @@ class ApiKeyConfig(BaseModel):
     # Optional API keys - loader should handle if they are missing
     helius_api_key: Optional[str] = None # Loaded from env
     birdeye_api_key: Optional[str] = None # Loaded from env
+    goplus_api_key: Optional[str] = None # Loaded from env
     defi_api_key: Optional[str] = None # Loaded from env
     sniperoo_api_key: Optional[str] = None # Loaded from env
     # Note: Jito auth uses a keypair file path, not just a key string
@@ -210,6 +211,7 @@ class AppConfig(BaseModel):
 
         api_keys['helius_api_key'] = os.getenv("HELIUS_API_KEY", api_keys.get('helius_api_key'))
         api_keys['birdeye_api_key'] = os.getenv("BIRDEYE_API_KEY", api_keys.get('birdeye_api_key'))
+        api_keys['goplus_api_key'] = os.getenv("GOPLUS_API_KEY", api_keys.get('goplus_api_key'))
         api_keys['defi_api_key'] = os.getenv("DEFI_API_KEY", api_keys.get('defi_api_key'))
         api_keys['sniperoo_api_key'] = os.getenv("SNIPEROO_API_KEY", api_keys.get('sniperoo_api_key'))
 
