@@ -43,18 +43,19 @@
     *   [x] Implement loading of `config.yml`.
     *   [x] Implement merging/handling of secrets from `.env`.
     *   [x] Implement **rigorous validation** using `pydantic` models.
-    *   [ ] **Testing:** Write **unit tests** (`tests/unit/config/test_loader.py`) for `loader.py`: *(Pending)*
-        *   [ ] Test successful loading with valid Devnet config/env.
+    *   [x] **Testing:** Write **unit tests** (`tests/config/test_loader.py`) for `loader.py`:
+        *   [x] Test successful loading with valid Devnet config/env.
         *   [ ] Test successful loading with valid Prod config/env (using dummy prod env).
-        *   [ ] Test failure on missing `config.yml`.
-        *   [ ] Test failure on invalid YAML format.
-        *   [ ] Test failure on missing required fields in config (pydantic validation).
-        *   [ ] Test failure on incorrect data types in config (pydantic validation).
-        *   [ ] Test failure on missing required environment variables (`.env`).
-        *   [ ] Test correct selection of network settings based on `APP_ENV`.
+        *   [x] Test failure on missing `config.yml`.
+        *   [x] Test failure on invalid YAML format.
+        *   [x] Test failure on missing required fields in config (pydantic validation).
+        *   [x] Test failure on incorrect data types in config (pydantic validation).
+        *   [x] Test failure on missing required environment variables (`.env`).
+        *   [x] Test correct environment variable override behavior.
+        *   [ ] Test correct selection of network settings based on `APP_ENV`. *(Implicitly covered, could add explicit test later)*
 *   [x] Implement `src/core/logger.py` using `structlog`.
     *   [x] Configure based on loaded config (level, file, format).
-    *   [ ] **Testing:** Write simple **unit test** (`tests/unit/core/test_logger.py`) to verify logger initialization and basic message logging. *(Pending)*
+    *   [x] **Testing:** Write simple **unit test** (`tests/core/test_logger.py`) to verify logger initialization and basic message logging. *(Completed)*
 *   [x] Create full project directory structure.
 
 **Completion:**
