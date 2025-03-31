@@ -197,6 +197,9 @@ advanced:
     config_path = tmp_path / "config.test.yml"
     config_path.write_text(config_content)
 
+    # Set required env var for SELF_BUILT in dev
+    os.environ['DEV_WALLET_PRIVATE_KEY'] = 'dummy_dev_key_for_defaults_test'
+
     # Pass the paths from fixtures/created file to the loader
     config = load_configuration(config_path=str(config_path), env_path=temp_env_file)
 
@@ -317,6 +320,9 @@ advanced:
 
     # Set another override via env var, e.g., for API key
     os.environ['APP_API_KEYS__HELIUS_API_KEY'] = 'override_helius_key'
+
+    # Set required env var for SELF_BUILT in dev
+    os.environ['DEV_WALLET_PRIVATE_KEY'] = 'dummy_dev_key_for_override_test'
 
     # Pass the paths from fixtures/created file to the loader
     config = load_configuration(config_path=str(config_path), env_path=temp_env_file)
@@ -505,7 +511,7 @@ def test_missing_required_env_vars(tmp_path):
     with pytest.raises(ValidationError) as excinfo:
         load_configuration(config_path=str(self_built_config_path), env_path=str(env_path))
 
-    assert "APP_WALLET__DEV_PRIVATE_KEY must be set" in str(excinfo.value)
+    assert "DEV_WALLET_PRIVATE_KEY must be set" in str(excinfo.value)
 
 def test_invalid_yaml_format(tmp_path):
     """Test loading with an invalid YAML file."""
