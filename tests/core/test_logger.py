@@ -1,7 +1,14 @@
 import logging
 import os
 import structlog
-from core.logger import configure_logging, get_logger
+import sys
+from pathlib import Path
+
+# Add project root to sys.path to find 'src'
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
+
+from src.core.logger import configure_logging, get_logger
 
 def test_configure_logging_defaults():
     """Test that configure_logging sets up structlog correctly with defaults."""

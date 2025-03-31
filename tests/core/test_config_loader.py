@@ -1,9 +1,11 @@
 import pytest
 import os
 import yaml
+import sys
+from pathlib import Path
 from pydantic import ValidationError
-from core.config_loader import load_config
-from core.models import Config
+from src.core.config_loader import load_config
+from src.core.models import Config
 
 # Helper to create temp env file
 @pytest.fixture
@@ -89,6 +91,9 @@ monitoring:
     config_path = tmp_path / "config.test.yml"
     config_path.write_text(config_content)
     return str(config_path)
+
+project_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(project_root))
 
 def test_load_config_defaults(temp_config_file, temp_env_file):
     """Test loading config with minimal env overrides."""
