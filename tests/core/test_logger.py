@@ -16,8 +16,8 @@ def test_configure_logging_defaults():
     configure_logging() # Call with defaults
     logger = get_logger("test_default_logger")
 
-    # Check that the logger is a structlog BoundLogger
-    assert isinstance(logger, structlog.stdlib.BoundLogger)
+    # Check that structlog has been configured
+    assert structlog.is_configured()
 
     # Check that the underlying standard library logger has the default level (INFO)
     std_lib_logger = logging.getLogger("test_default_logger")

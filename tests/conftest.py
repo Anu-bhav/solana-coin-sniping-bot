@@ -11,6 +11,7 @@ def temp_config_file(tmp_path):
     config_content = """
 general:
   app_name: TestSniper
+  app_env: development # Explicitly set for tests
   log_level: INFO
   dry_run: true
 
@@ -69,6 +70,11 @@ execution:
   slippage_percent: 25.0
   compute_unit_limit: 1000000
   compute_unit_price_micro_lamports: 5000
+  sniperoo: null # Explicitly null if not used by default
+  jito: null # Explicitly null if not used by default
+  max_tx_retries: 3
+  tx_confirmation_timeout_seconds: 60
+  use_transaction_simulation: false
 
 sniper_settings:
   auto_sell_delay_seconds: 30
@@ -81,8 +87,13 @@ wallet:
   # Private keys loaded from env
 
 monitoring: # Added missing section
+  enabled: true
+  enable_auto_sell: true
+  poll_interval_seconds: 10
   health_check_interval_seconds: 60
   transaction_monitoring_interval_seconds: 5
+  take_profit_pct: 100.0
+  stop_loss_pct: 50.0
 
 scheduled_tasks:
   clean_old_logs_days: 3

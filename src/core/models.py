@@ -258,3 +258,28 @@ class AppConfig(BaseModel):
             if not self.execution.sniperoo:
                 self.execution.sniperoo = SniperooSettings()
         return self
+
+    @model_validator(mode='after')
+    def check_self_built_config(self) -> 'AppConfig':
+        """Ensure wallet keys are loaded from env if SELF_BUILT provider is selected."""
+        if self.execution and self.execution.provider == "SELF_BUILT":
+            # Explicitly load wallet keys from env vars *within* the validator
+            # because they are root fields, not nested like RPC/API keys.
+            dev_key = os.getenv("DEV_WALLET_PRIVATE_KEY")
+            prod_key = os.getenv("PROD_WALLET_PRIVATE_KEY")
+
+            # Assign loaded keys to the model instance for later use
+            self.dev_wallet_private_key = dev_key
+            self.prod_wallet_private_key = prod_key
+
+            # Check based on environment
+            if self.general and self.general.app_env == "development":
+                if not self.dev_wallet_private_key:
+                    raise ValueError("DEV_WALLET_PRIVATE_KEY must be set in environment variables for SELF_BUILT provider in development environment.")
+            elif self.general and self.general.app_env == "production":
+                if not self.prod_wallet_private_key:
+                    raise ValueError("PROD_WALLET_PRIVATE_KEY must be set in environment variables for SELF_BUILT provider in production environment.")
+        return self
+
+# Example of how to use the config
+# try:
