@@ -70,7 +70,7 @@ This project aims to build an automated trading bot with the following key capab
 
 2.  **Clone the repository:**
     ```bash
-    git clone <repository-url>
+    git clone https://github.com/Anu-bhav/solana-coin-sniping-bot
     cd solana-coin-sniping-bot
     ```
 
