@@ -28,3 +28,6 @@ logs/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Wallet files
+*.json
