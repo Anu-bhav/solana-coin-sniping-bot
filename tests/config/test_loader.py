@@ -210,9 +210,9 @@ advanced:
     assert config.general.app_name == "TestSniper"
     assert config.general.log_level == "INFO"
     assert str(config.database.db_path) == "test_db"  # Compare as string
-    assert config.rpc.devnet_http == "http://dev.rpc"
-    assert config.rpc.devnet_wss == "ws://dev.rpc"
-    assert config.wallet.dev_private_key == [1, 2, 3]
+    assert str(config.rpc.devnet_http_url) == "http://dev.rpc/" # Use correct attribute and compare str
+    assert config.rpc.devnet_wss_url == "ws://dev.rpc" # Use correct attribute
+    assert config.dev_wallet_private_key == 'dummy_dev_key_for_defaults_test' # Check env var value
     assert config.api_keys.helius_api_key == "env_helius_key" # Env overrides config
     assert config.execution.provider == "SELF_BUILT"
     assert config.execution.slippage_percent == 25.0
