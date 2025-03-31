@@ -181,9 +181,11 @@ def load_configuration(
 
         return validated_config
 
+    except (yaml.YAMLError, ValidationError):
+        raise
     except Exception as e:
-        logger.exception(
-            f"An unexpected error occurred during configuration loading: {e}"
+        logger.error(
+            f"An unexpected error occurred during configuration loading: {e}", exc_info=True
         )
         return None
 
