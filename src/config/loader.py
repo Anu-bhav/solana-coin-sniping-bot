@@ -123,6 +123,9 @@ def load_configuration(
         dev_wallet_pk = os.getenv("DEV_WALLET_PRIVATE_KEY")
         prod_wallet_pk = os.getenv("PROD_WALLET_PRIVATE_KEY")
 
+        # DEBUG: Print the dictionary before passing to Pydantic
+        print(f"DEBUG: config_data before Pydantic validation: {config_data}")
+
         # 5. Validate using Pydantic
         try:
             validated_config = AppConfig(**config_data)
