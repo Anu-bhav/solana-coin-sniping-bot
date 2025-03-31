@@ -4,16 +4,18 @@
 from pydantic import (
     BaseModel,
     Field,
+    model_validator,
+    field_validator,
     HttpUrl,
     DirectoryPath,
     FilePath,
     validator,
     PositiveInt,
     NonNegativeFloat,
-    root_validator,
 )
-from typing import Optional, Literal, Dict, List
+from typing import Optional, Literal, Dict, List, Any
 import os
+from pathlib import Path
 
 # Placeholder for now, will be populated based on config.yml structure
 
@@ -31,10 +33,12 @@ class DatabaseConfig(BaseModel):
     prod_db_file: str = "mainnet_sniper.sqlite"
     _full_db_path: Optional[FilePath] = None
 
-    @validator("db_path", pre=True, always=True)
+    @field_validator("db_path", mode='before')
+    @classmethod
     def ensure_db_path_exists(cls, v):
-        if not os.path.exists(v):
-            os.makedirs(v)
+        v_str = str(v)
+        if not os.path.exists(v_str):
+            os.makedirs(v_str)
         return v
 
 
@@ -194,11 +198,16 @@ class AppConfig(BaseModel):
     active_raydium_program_id: Optional[str] = None
     active_pumpswap_program_id: Optional[str] = None
 
-    @root_validator(pre=True)
-    def load_env_vars_to_rpc_and_api_keys(cls, values):
+    @model_validator(mode='before')
+    @classmethod
+    def load_env_vars(cls, data: Any) -> Any:
         """Explicitly load known env vars into the dictionaries for validation."""
-        rpc = values.get('rpc', {})
-        api_keys = values.get('api_keys', {})
+        if not isinstance(data, dict):
+            return data # Skip if not dictionary input
+
+        # Ensure nested dicts exist
+        rpc = data.setdefault('rpc', {})
+        api_keys = data.setdefault('api_keys', {})
 
         rpc['devnet_http_url'] = os.getenv("DEVNET_HTTP_URL", rpc.get('devnet_http_url'))
         rpc['devnet_wss_url'] = os.getenv("DEVNET_WSS_URL", rpc.get('devnet_wss_url'))
@@ -213,38 +222,39 @@ class AppConfig(BaseModel):
         api_keys['defi_api_key'] = os.getenv("DEFI_API_KEY", api_keys.get('defi_api_key'))
         api_keys['sniperoo_api_key'] = os.getenv("SNIPEROO_API_KEY", api_keys.get('sniperoo_api_key'))
 
-        values['rpc'] = rpc
-        values['api_keys'] = api_keys
-        return values
+        # No need to assign back, modifying data in place
+        return data
 
-    @root_validator(skip_on_failure=True)
-    def check_jito_config(cls, values):
+    @model_validator(mode='after')
+    def check_jito_config(self) -> 'AppConfig': # Use forward reference
         """Load Jito env vars and ensure consistency if Jito provider is selected."""
-        execution = values.get('execution')
-        if execution and execution.provider == "JITO_BUNDLER":
-            jito_auth_path = os.getenv("JITO_AUTH_KEYPAIR_PATH")
+        # Access fields via self after initial validation
+        if self.execution and self.execution.provider == "JITO_BUNDLER":
+            jito_auth_path_str = os.getenv("JITO_AUTH_KEYPAIR_PATH")
             jito_block_engine = os.getenv("JITO_BLOCK_ENGINE_URL")
-            if not jito_auth_path or not jito_block_engine:
+            if not jito_auth_path_str or not jito_block_engine:
                 raise ValueError("JITO_AUTH_KEYPAIR_PATH and JITO_BLOCK_ENGINE_URL must be set in environment variables when JITO_BUNDLER provider is selected.")
-            if not os.path.exists(jito_auth_path):
-                raise ValueError(f"Jito auth keypair file not found at path: {jito_auth_path}")
-            values['jito_auth_keypair_path'] = jito_auth_path
-            # Ensure jito settings exist in execution config
-            if not execution.jito:
-                 execution.jito = JitoSettings()
-            execution.jito.block_engine_url = jito_block_engine
-            execution.jito.auth_keypair_path = jito_auth_path
-        return values
+            if not os.path.exists(jito_auth_path_str):
+                raise ValueError(f"Jito auth keypair file not found at path: {jito_auth_path_str}")
 
-    @root_validator(skip_on_failure=True)
-    def check_sniperoo_config(cls, values):
+            # Set the resolved path on the model instance
+            self.jito_auth_keypair_path = Path(jito_auth_path_str)
+
+            # Ensure jito settings exist in execution config and update them
+            if not self.execution.jito:
+                self.execution.jito = JitoSettings()
+            self.execution.jito.block_engine_url = jito_block_engine
+            self.execution.jito.auth_keypair_path = Path(jito_auth_path_str)
+        return self
+
+    @model_validator(mode='after')
+    def check_sniperoo_config(self) -> 'AppConfig':
         """Ensure Sniperoo key is set if provider is selected."""
-        execution = values.get('execution')
-        api_keys = values.get('api_keys')
-        if execution and execution.provider == "SNIPEROO_API":
-            if not api_keys or not api_keys.sniperoo_api_key:
+        # Access fields via self
+        if self.execution and self.execution.provider == "SNIPEROO_API":
+            if not self.api_keys or not self.api_keys.sniperoo_api_key:
                 raise ValueError("SNIPEROO_API_KEY must be set in environment variables when SNIPEROO_API provider is selected.")
             # Ensure sniperoo settings exist
-            if not execution.sniperoo:
-                execution.sniperoo = SniperooSettings()
-        return values
+            if not self.execution.sniperoo:
+                self.execution.sniperoo = SniperooSettings()
+        return self
