@@ -27,8 +27,7 @@ rpc:
 
 # --- API Keys Settings ---
 api_keys:
-  # ALL API Keys are preferably loaded from .env.* files
-  # (HELIUS_API_KEY, DEXSCREENER_API_KEY, BIRDEYE_API_KEY, GOPLUS_API_KEY, DEFI_API_KEY, SNIPEROO_API_KEY)
+  # (HELIUS_API_KEY, BIRDEYE_API_KEY, DEFI_API_KEY, SNIPEROO_API_KEY)
   # This section is mainly a placeholder; loader prioritizes .env values.
   pass # Leave as pass if all keys are in .env
 
