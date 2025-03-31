@@ -100,7 +100,7 @@ execution:
 
   # --- Settings for provider: SNIPEROO_API ---
   sniperoo:
-    base_url: "https://api.sniperoo.com" # Check correct API endpoint
+    base_url: "https://api.sniperoo.app" # Check correct API endpoint
     # SNIPEROO_API_KEY must be set in .env
 
   # --- Settings for provider: JITO_BUNDLER ---
