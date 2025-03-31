@@ -4,14 +4,14 @@
 
 **General:**
 
-*   [ ] Confirm understanding of Phase 0 Goals and Deliverables. *(Assumed complete via conversation)*
+*   [x] Confirm understanding of Phase 0 Goals and Deliverables. *(Assumed complete via conversation)*
 *   [ ] Document Scope & Constraints formally (in README or design doc). *(Partially done in README)*
 *   [ ] Document initial Devnet Success Criteria. *(Deferred - Requires thought)*
 
 **Research:**
 
-*   [ ] Document findings on Solana fundamentals (Accounts, TXs, Fees, etc.). *(User knowledge assumed)*
-*   [ ] Document findings on Pump.fun mechanics (Graduation, Contract Patterns). *(User knowledge assumed)*
+*   [x] Document findings on Solana fundamentals (Accounts, TXs, Fees, etc.). *(User knowledge assumed)*
+*   [x] Document findings on Pump.fun mechanics (Graduation, Contract Patterns). *(User knowledge assumed)*
 *   [ ] **Identify and Document precise Devnet Program IDs** for target DEX(s) (Raydium LP v4 / PumpSwap AMM). *(Manual Step - Pending)*
 *   [ ] **Analyze and Document structure** of target DEX `Initialize` and `Swap` instructions on Devnet. *(Manual Step - Pending)*
 *   [ ] Compile list of common Solana scam vectors and potential detection ideas. *(Deferred - For Filtering Phase)*
