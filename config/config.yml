@@ -29,7 +29,7 @@ rpc:
 api_keys:
   # (HELIUS_API_KEY, BIRDEYE_API_KEY, DEFI_API_KEY, SNIPEROO_API_KEY)
   # This section is mainly a placeholder; loader prioritizes .env values.
-  pass # Leave as pass if all keys are in .env
+  {} # Define as an empty mapping (dictionary)
 
 # --- Token Detection Settings ---
 detection:
