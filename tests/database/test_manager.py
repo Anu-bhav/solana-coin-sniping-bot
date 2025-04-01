@@ -86,11 +86,11 @@ def mock_aiosqlite_connection():
     mock_cursor.close = AsyncMock()  # Mock close method for cursor
 
     # Configure mock connection methods
-    mock_conn.cursor = AsyncMock(return_value=mock_cursor)
+    # Make cursor() return the mock cursor directly, not a coroutine
+    mock_conn.cursor = MagicMock(return_value=mock_cursor)
     mock_conn.execute = AsyncMock(return_value=mock_cursor)  # execute returns cursor
-    mock_conn.executescript = AsyncMock(
-        return_value=mock_cursor
-    )  # executescript returns cursor
+    # Make executescript() return the mock cursor directly
+    mock_conn.executescript = MagicMock(return_value=mock_cursor)
     mock_conn.commit = AsyncMock()
     mock_conn.rollback = AsyncMock()
     mock_conn.close = AsyncMock()
@@ -513,25 +513,40 @@ async def test_move_position_to_trades_success(
     mock_conn.execute = AsyncMock()  # General mock for execute
 
     # Specific mocks for the sequence within the transaction
+    # Ensure fetchone is correctly configured *before* execute is awaited
+    mock_cursor.fetchone = AsyncMock(
+        return_value=mock_pos_row
+    )  # Set fetchone for the SELECT
+
     async def execute_side_effect(sql, params=None):
+        print(f"Mock Execute Called: SQL='{sql}', Params={params}")  # Debug print
         if "BEGIN TRANSACTION" in sql:
-            return mock_cursor  # Return cursor for context manager if needed
+            print("  -> Matched BEGIN")
+            return mock_cursor
         elif "SELECT * FROM positions" in sql:
-            mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+            print(
+                f"  -> Matched SELECT, returning cursor with fetchone configured for: {mock_pos_row}"
+            )
+            # fetchone is already configured above to return mock_pos_row
             return mock_cursor
         elif "INSERT INTO trades" in sql:
-            # Check insert params here if needed
+            print("  -> Matched INSERT")
             return mock_cursor
         elif "DELETE FROM positions" in sql:
-            # Check delete params here if needed
+            print("  -> Matched DELETE")
             return mock_cursor
         elif "COMMIT" in sql:
+            print("  -> Matched COMMIT")
             return mock_cursor
         elif "ROLLBACK" in sql:
+            print("  -> Matched ROLLBACK")
             return mock_cursor
         else:
             # Default cursor for other potential calls like PRAGMA
-            mock_cursor.fetchone = AsyncMock(return_value=None)
+            print(f"  -> Matched OTHER ({sql}), returning default cursor")
+            mock_cursor.fetchone = AsyncMock(
+                return_value=None
+            )  # Reset fetchone for other calls
             return mock_cursor
 
     mock_conn.execute.side_effect = execute_side_effect
