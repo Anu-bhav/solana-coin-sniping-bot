@@ -12,7 +12,7 @@ lint_rules:
   enforce_eslint: true                   # Enforce ESLint for code consistency
   enforce_prettier: true                 # Enforce Prettier for consistent formatting
   enforce_black: true                    # Enforce black for consistent formatting
-  enforce_ruff: true                     # Enforce ruff for consistent formatting
+  enforce_ruff: true                     # Enforce ruff for consistent linting
 
 # SPARC Focus: Specification - Define styling and UI/UX guidelines
 styling:
@@ -26,6 +26,8 @@ environments:
     virtual_env: true                    # Use a virtual environment for Python projects
     linter: ruff                         # Lint Python code with ruff
     formatter: black                     # Format Python code with Black
+    test_runner: pytest                   # Use pytest for running Python tests
+    dependency_manager: uv               # Use pip for dependency management
   node:
     package_manager: npm                 # Use npm as the package manager
     test_runner: jest                    # Use Jest for running JavaScript tests
