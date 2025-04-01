@@ -24,7 +24,7 @@ styling:
 environments:
   python:
     virtual_env: true                    # Use a virtual environment for Python projects
-    linter: ruff                       # Lint Python code with ruff
+    linter: ruff                         # Lint Python code with ruff
     formatter: black                     # Format Python code with Black
   node:
     package_manager: npm                 # Use npm as the package manager
@@ -149,6 +149,7 @@ repository_search:
     - .tsx                                      # Include TSX files
     - .js                                       # Include JavaScript files
     - .jsx                                      # Include JSX files
+    - .py                                       # Include Python files  
 
 # SPARC Focus: Completion - Custom command shortcuts
 command_shortcuts:
