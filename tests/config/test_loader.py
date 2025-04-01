@@ -23,6 +23,20 @@ APP_API_KEYS__HELIUS_API_KEY=env_helius_key
     env_path.write_text(env_content)
     return str(env_path)
 
+# Helper to create temp PROD env file
+@pytest.fixture
+def temp_prod_env_file(tmp_path):
+    env_content = '''
+# Minimal Prod Env
+PROD_WALLET_PRIVATE_KEY=[4,5,6] # Use a different key for prod test
+MAINNET_HTTP_URL=http://main.rpc
+MAINNET_WSS_URL=ws://main.rpc
+HELIUS_API_KEY=prod_helius_key # Different API key for prod test
+'''
+    env_path = tmp_path / ".env.test.prod"
+    env_path.write_text(env_content)
+    return str(env_path)
+
 # Helper to create temp config file
 @pytest.fixture
 def temp_config_file(tmp_path):
@@ -209,10 +223,12 @@ advanced:
     # Assert default values from YAML are loaded
     assert config.general.app_name == "TestSniper"
     assert config.general.log_level == "INFO"
-    assert str(config.database.db_path) == "test_db"  # Compare as string
-    assert str(config.rpc.devnet_http_url) == "http://dev.rpc/" # Use correct attribute and compare str
-    assert config.rpc.devnet_wss_url == "ws://dev.rpc" # Use correct attribute
-    assert config.dev_wallet_private_key == 'dummy_dev_key_for_defaults_test' # Check env var value
+    assert str(config.database.db_path) == "test_db"
+    # Verify Dev settings are loaded when APP_ENV is development (default)
+    assert config.database.dev_db_file == "test_dev.sqlite"
+    assert str(config.rpc.devnet_http_url) == "http://dev.rpc/"
+    assert config.rpc.devnet_wss_url == "ws://dev.rpc"
+    assert config.dev_wallet_private_key == 'dummy_dev_key_for_defaults_test'
     assert config.api_keys.helius_api_key == "env_helius_key" # Env overrides config
     assert config.execution.provider == "SELF_BUILT"
     assert config.execution.slippage_percent == 25.0
@@ -531,3 +547,138 @@ def test_non_existent_config_file(tmp_path):
     # load_configuration should handle the missing file and return None
     result = load_configuration(config_path=str(non_existent_path))
     assert result is None
+
+def test_load_config_production(tmp_path, temp_prod_env_file):
+    """Test loading config with APP_ENV=production."""
+    # Define minimal valid YAML content (can reuse parts from defaults test)
+    config_content = """
+general:
+  app_name: TestSniperProd
+  app_env: production # Explicitly set for clarity, though loader uses env var
+  log_level: WARNING
+  dry_run: false
+database:
+  db_path: prod_db
+  dev_db_file: test_dev.sqlite
+  prod_db_file: test_prod.sqlite # Production DB file
+rpc:
+  request_timeout_seconds: 20
+  max_retries: 5
+api_keys: {}
+detection:
+  enabled: true
+  target_dex: raydium_v4
+  raydium_v4_devnet_program_id: test_dev_id
+  raydium_v4_mainnet_program_id: test_main_id # Mainnet ID
+  block_processed_tokens: true
+  pool_creation_delay_seconds: 0
+filtering:
+  enabled: true
+  contract_liquidity:
+    enabled: true
+    min_initial_sol_liquidity: 1.0 # Higher for prod
+    max_initial_sol_liquidity: 50.0
+    check_burn_status: true # Enable more checks for prod
+    require_renounced_mint_authority: true
+    require_renounced_freeze_authority: true
+    check_lp_locks: true
+    min_lp_lock_duration_days: 90
+  metadata_distribution:
+    enabled: true # Enable more checks for prod
+    check_socials: true
+    require_website: true
+    require_twitter: false
+    require_telegram: false
+    enable_holder_analysis: true
+    min_holder_count: 50
+    max_creator_holding_pct: 50.0
+    max_top_10_holder_pct: 60.0
+  rug_pull_honeypot:
+    enabled: true
+    check_pool_existence: true
+    check_trade_direction: true
+    use_external_honeypot_check_api: goplus # Use external check for prod
+    fail_if_goplus_error: true
+    fail_if_defi_error: false
+execution:
+  enabled: true
+  provider: JITO_BUNDLER # Different provider for prod test
+  buy_amount_sol: 0.05 # Higher amount for prod test
+  slippage_percent: 15.0 # Lower slippage for prod
+  compute_unit_limit: 1400000
+  compute_unit_price_micro_lamports: 20000
+  sniperoo: null
+  jito: # Jito settings needed for JITO_BUNDLER
+    tip_lamports: 10000
+  max_tx_retries: 5
+  tx_confirmation_timeout_seconds: 120
+  use_transaction_simulation: true
+sniper_settings:
+  auto_sell_delay_seconds: 120
+  take_profit_percentage: 150
+  stop_loss_percentage: 30
+wallet:
+  dev_wallet_name: test_dev_wallet
+  prod_wallet_name: test_prod_wallet # Production wallet name
+monitoring:
+  enabled: true
+  enable_auto_sell: true
+  poll_interval_seconds: 5
+  health_check_interval_seconds: 30
+  transaction_monitoring_interval_seconds: 2
+  take_profit_pct: 150.0
+  stop_loss_pct: 30.0
+scheduled_tasks:
+  clean_old_logs_days: 14
+  monitor_sell_task_seconds: 5
+  pump_token_monitor_seconds: 1
+rate_limits:
+  global_requests_per_second: 20
+performance:
+  max_concurrent_tasks: 10
+telegram_bot:
+  enabled: true # Enable for prod
+advanced:
+  enable_tx_simulation: true
+  transaction_priority_fee_lamports: 10000
+"""
+    # Create the temp config file
+    config_path = tmp_path / "config.prod.test.yml"
+    config_path.write_text(config_content)
+
+    # Set environment variables for production
+    os.environ['APP_ENV'] = 'production'
+    # Required env vars for JITO_BUNDLER provider
+    os.environ['PROD_WALLET_PRIVATE_KEY'] = 'dummy_prod_key_for_prod_test'
+    os.environ['JITO_BLOCK_ENGINE_URL'] = 'http://jito.engine'
+    os.environ['JITO_AUTH_KEYPAIR_PATH'] = str(tmp_path / 'jito_key.json') # Dummy path
+    # Create dummy Jito key file
+    (tmp_path / 'jito_key.json').touch()
+
+    # Load configuration
+    config = load_configuration(config_path=str(config_path), env_path=temp_prod_env_file)
+
+    # Assertions
+    assert isinstance(config, AppConfig)
+    assert config.general.app_env == 'production' # Verify env is set correctly
+    assert config.general.log_level == 'WARNING'
+    assert config.general.dry_run is False
+    # Verify Prod settings are loaded
+    assert config.database.prod_db_file == "test_prod.sqlite"
+    assert str(config.rpc.mainnet_http_url) == "http://main.rpc/" # Check prod RPC URL
+    assert config.rpc.mainnet_wss_url == "ws://main.rpc"
+    assert config.prod_wallet_private_key == 'dummy_prod_key_for_prod_test' # Check prod key
+    assert config.api_keys.helius_api_key == "prod_helius_key" # Check prod API key from env
+    assert config.execution.provider == "JITO_BUNDLER"
+    assert config.execution.buy_amount_sol == 0.05
+    assert config.execution.jito.tip_lamports == 10000
+    assert config.filtering.contract_liquidity.min_initial_sol_liquidity == 1.0 # Check prod filter value
+    assert config.telegram_bot.enabled is True
+
+    # Clean up environment variables
+    del os.environ['APP_ENV']
+    del os.environ['PROD_WALLET_PRIVATE_KEY']
+    del os.environ['JITO_BLOCK_ENGINE_URL']
+    del os.environ['JITO_AUTH_KEYPAIR_PATH']
+    if 'HELIUS_API_KEY' in os.environ: # Clean up if set by prod env file
+        del os.environ['HELIUS_API_KEY']
