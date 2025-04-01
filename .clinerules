@@ -11,6 +11,8 @@ lint_rules:
   disable_requires_approval: true        # Require explicit approval to disable lint rules
   enforce_eslint: true                   # Enforce ESLint for code consistency
   enforce_prettier: true                 # Enforce Prettier for consistent formatting
+  enforce_black: true                    # Enforce black for consistent formatting
+  enforce_ruff: true                     # Enforce ruff for consistent formatting
 
 # SPARC Focus: Specification - Define styling and UI/UX guidelines
 styling:
