@@ -53,20 +53,24 @@ def mock_config():
 
 
 @pytest.fixture
-def db_manager(mock_config): # Changed to sync fixture
+def db_manager(mock_config):  # Changed to sync fixture
     """Provides an instance of DatabaseManager with mocked config."""
     # Temporarily patch Path.mkdir during instantiation if needed, although
     # mocking the connection should prevent actual file operations.
-    with patch('pathlib.Path.mkdir', return_value=None):
-         manager = DatabaseManager(config=mock_config)
+    with patch("pathlib.Path.mkdir", return_value=None):
+        manager = DatabaseManager(config=mock_config)
     # Ensure db_path is correctly set based on the mock config for tests
     if mock_config.general.app_env == "production":
-        manager.db_path = Path(mock_config.database.db_path) / mock_config.database.prod_db_file
+        manager.db_path = (
+            Path(mock_config.database.db_path) / mock_config.database.prod_db_file
+        )
     else:
-        manager.db_path = Path(mock_config.database.db_path) / mock_config.database.dev_db_file
+        manager.db_path = (
+            Path(mock_config.database.db_path) / mock_config.database.dev_db_file
+        )
     # Reset connection state for each test using the fixture
     manager.connection = None
-    return manager # Return the instance directly
+    return manager  # Return the instance directly
 
 
 @pytest.fixture
@@ -83,10 +87,12 @@ def mock_aiosqlite_connection():
 
     # Configure mock connection methods
     # cursor() should be an AsyncMock returning the mock_cursor
-    mock_conn.cursor = AsyncMock(return_value=mock_cursor) # CORRECTED: Use AsyncMock
+    mock_conn.cursor = AsyncMock(return_value=mock_cursor)  # CORRECTED: Use AsyncMock
     mock_conn.execute = AsyncMock(return_value=mock_cursor)  # execute returns cursor
     # executescript should be awaitable
-    mock_conn.executescript = AsyncMock(return_value=mock_cursor) # CORRECTED: Keep AsyncMock
+    mock_conn.executescript = AsyncMock(
+        return_value=mock_cursor
+    )  # CORRECTED: Keep AsyncMock
     mock_conn.commit = AsyncMock()
     mock_conn.rollback = AsyncMock()
     mock_conn.close = AsyncMock()
@@ -248,7 +254,7 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
     """Test adding a detection record."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.fetchone.return_value = (1,) # Simulate returning row ID
+    mock_cursor.fetchone.return_value = (1,)  # Simulate returning row ID
 
     token = "TokenMint1"
     lp = "LPAddr1"
@@ -269,7 +275,7 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
         RETURNING id;
         """
     # Use call comparison for execute
-    mock_conn.cursor.assert_called_once() # Check cursor obtained
+    mock_conn.cursor.assert_called_once()  # Check cursor obtained
     mock_cursor.execute.assert_called_once()
     args, _ = mock_cursor.execute.call_args
     # Clean whitespace for comparison
@@ -289,7 +295,7 @@ async def test_update_detection_status(
     """Test updating detection status."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.rowcount = 1 # Simulate one row updated
+    mock_cursor.rowcount = 1  # Simulate one row updated
 
     token = "TokenMint1"
     status = "PASSED_FILTER"
@@ -321,13 +327,203 @@ async def test_update_detection_status_not_found(
     """Test updating status for a non-existent token."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.rowcount = 0 # Simulate zero rows updated
+    mock_cursor.rowcount = 0  # Simulate zero rows updated
 
     success = await db_manager.update_detection_status(
         "NonExistentToken", "FAILED_FILTER"
     )
 
     assert success is False
+    mock_conn.cursor.assert_called_once()
+    mock_cursor.execute.assert_called_once()
+    mock_conn.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("aiosqlite.connect", new_callable=AsyncMock)
+async def test_add_position(mock_connect, db_manager, mock_aiosqlite_connection):
+    """Test adding a position record."""
+    mock_conn, mock_cursor = mock_aiosqlite_connection
+    mock_connect.return_value = mock_conn
+    mock_cursor.fetchone.return_value = (5,)  # Simulate returning row ID 5
+
+    token = "TokenMintPos1"
+    lp = "LPAddrPos1"
+    buy_sol = 0.1
+    buy_sig = "BuySig1"
+    buy_tokens = 1000.0
+    buy_price = 0.0001
+
+    result_id = await db_manager.add_position(
+        token, lp, buy_sol, buy_sig, buy_tokens, buy_price
+    )
+
+    assert result_id == 5
+    expected_sql = """
+        INSERT INTO positions (token_mint, lp_address, buy_amount_sol, buy_tx_signature, buy_amount_tokens, buy_price, buy_provider_identifier, status, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
+        ON CONFLICT(token_mint) DO UPDATE SET
+            -- If a position already exists, log warning and maybe update timestamp? Avoid overwriting active trade.
+            last_updated = CURRENT_TIMESTAMP
+            -- Consider adding a specific status like 'DUPLICATE_BUY_ATTEMPT' if needed
+        RETURNING id;
+        """
+    mock_conn.cursor.assert_called_once()
+    mock_cursor.execute.assert_called_once()
+    args, _ = mock_cursor.execute.call_args
+    cleaned_expected_sql = " ".join(expected_sql.split())
+    cleaned_actual_sql = " ".join(args[0].split())
+    assert cleaned_actual_sql == cleaned_expected_sql
+    assert args[1] == (
+        token,
+        lp,
+        buy_sol,
+        buy_sig,
+        buy_tokens,
+        buy_price,
+        None,
+    )  # buy_provider_identifier is None
+    mock_cursor.fetchone.assert_called_once()
+    mock_conn.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("aiosqlite.connect", new_callable=AsyncMock)
+async def test_update_position_status(
+    mock_connect, db_manager, mock_aiosqlite_connection
+):
+    """Test updating position status."""
+    mock_conn, mock_cursor = mock_aiosqlite_connection
+    mock_connect.return_value = mock_conn
+    mock_cursor.rowcount = 1  # Simulate update success
+
+    token = "TokenMintPos1"
+    new_status = "SELL_PENDING"
+
+    success = await db_manager.update_position_status(token, new_status)
+
+    assert success is True
+    expected_sql = """
+        UPDATE positions
+        SET status = ?, last_updated = CURRENT_TIMESTAMP
+        WHERE token_mint = ? AND status = 'ACTIVE'; -- Only update active positions
+        """
+    mock_conn.cursor.assert_called_once()
+    mock_cursor.execute.assert_called_once()
+    args, _ = mock_cursor.execute.call_args
+    cleaned_expected_sql = " ".join(expected_sql.split())
+    cleaned_actual_sql = " ".join(args[0].split())
+    assert cleaned_actual_sql == cleaned_expected_sql
+    assert args[1] == (new_status, token)
+    mock_conn.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("aiosqlite.connect", new_callable=AsyncMock)
+async def test_get_active_position(mock_connect, db_manager, mock_aiosqlite_connection):
+    """Test retrieving a specific active position."""
+    mock_conn, mock_cursor = mock_aiosqlite_connection
+    mock_connect.return_value = mock_conn
+    # Simulate returning a row using a dictionary for Row factory compatibility
+    # Need to mock the Row object itself if direct dict access is used in assertions
+    mock_row = MagicMock(spec=aiosqlite.Row)
+    mock_row.__getitem__.side_effect = lambda key: {
+        "id": 1,
+        "token_mint": "TokenMintActive",
+        "status": "ACTIVE",
+    }[key]
+    mock_cursor.fetchone.return_value = mock_row
+
+    token = "TokenMintActive"
+    position = await db_manager.get_active_position(token)
+
+    assert position is not None
+    assert position["token_mint"] == token  # Access like a dictionary
+    assert position["status"] == "ACTIVE"
+    expected_sql = "SELECT * FROM positions WHERE token_mint = ? AND status = 'ACTIVE';"
+    mock_conn.cursor.assert_called_once()
+    mock_cursor.execute.assert_called_once_with(expected_sql, (token,))
+    mock_cursor.fetchone.assert_called_once()
+    assert mock_conn.row_factory is aiosqlite.Row  # Check row factory was set
+
+
+@pytest.mark.asyncio
+@patch("aiosqlite.connect", new_callable=AsyncMock)
+async def test_get_all_active_positions(
+    mock_connect, db_manager, mock_aiosqlite_connection
+):
+    """Test retrieving all active positions."""
+    mock_conn, mock_cursor = mock_aiosqlite_connection
+    mock_connect.return_value = mock_conn
+    # Simulate returning Row objects
+    row1 = MagicMock(spec=aiosqlite.Row)
+    row1.__getitem__.side_effect = lambda k: {
+        "id": 1,
+        "token_mint": "Token1",
+        "status": "ACTIVE",
+    }[k]
+    row2 = MagicMock(spec=aiosqlite.Row)
+    row2.__getitem__.side_effect = lambda k: {
+        "id": 2,
+        "token_mint": "Token2",
+        "status": "ACTIVE",
+    }[k]
+    mock_rows = [row1, row2]
+    mock_cursor.fetchall.return_value = mock_rows
+
+    positions = await db_manager.get_all_active_positions()
+
+    assert len(positions) == 2
+    assert positions[0]["token_mint"] == "Token1"
+    assert positions[1]["token_mint"] == "Token2"
+    expected_sql = "SELECT * FROM positions WHERE status = 'ACTIVE';"
+    mock_conn.cursor.assert_called_once()
+    mock_cursor.execute.assert_called_once_with(expected_sql)
+    mock_cursor.fetchall.assert_called_once()
+    assert mock_conn.row_factory is aiosqlite.Row
+
+
+@pytest.mark.asyncio
+@patch("aiosqlite.connect", new_callable=AsyncMock)
+async def test_move_position_to_trades_success(
+    mock_connect, db_manager, mock_aiosqlite_connection
+):
+    """Test successfully moving a position to the trades table."""
+    mock_conn, mock_cursor = mock_aiosqlite_connection
+    mock_connect.return_value = mock_conn
+
+    # Mock the SELECT call to find the position
+    position_row_data = {
+        "id": 10,
+        "token_mint": "TokenToMove",
+        "lp_address": "LPMove",
+        "buy_timestamp": "2023-01-01 10:00:00",
+        "buy_amount_sol": 0.2,
+        "buy_amount_tokens": 2000.0,
+        "buy_price": 0.0001,
+        "buy_tx_signature": "BuySigMove",
+        "buy_provider_identifier": None,
+        "status": "ACTIVE",
+        "last_price_check_timestamp": None,
+        "highest_price_since_buy": None,
+        "last_updated": "2023-01-01 10:00:00",
+    }
+    # Setup cursor for multiple execute calls within the transaction
+    # Mock the Row object for the fetchone call
+    mock_pos_row = MagicMock(spec=aiosqlite.Row)
+    mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
+
+    # We need to mock the sequence of calls on the connection
+    mock_conn.execute = AsyncMock()  # General mock for execute
+
+    # Specific mocks for the sequence within the transaction
+    async def execute_side_effect(sql, params=None):
+        # print(f"Mock Execute Called: SQL='{sql}', Params={params}") # Debug print
+        if "BEGIN TRANSACTION" in sql:
+            # print("  -> Matched BEGIN")
+            # Return a new cursor mock for this specific call if needed,
+            # or reuse the main one if state doesn't interfere.
+            return mock_cursor  # Incorrect: execute doesn't return cursor for BEGIN
         elif "SELECT * FROM positions" in sql:
             # print(f"  -> Matched SELECT for {params}")
             # IMPORTANT: Configure fetchone *here* to return the specific row for this SELECT
@@ -345,11 +541,11 @@ async def test_update_detection_status_not_found(
         elif "COMMIT" in sql:
             # print("  -> Matched COMMIT")
             mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor
+            return mock_cursor  # Incorrect: execute doesn't return cursor for COMMIT
         elif "ROLLBACK" in sql:
             # print("  -> Matched ROLLBACK")
             mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor
+            return mock_cursor  # Incorrect: execute doesn't return cursor for ROLLBACK
         else:
             # Default cursor for other potential calls like PRAGMA
             # print(f"  -> Matched OTHER ({sql}), returning default cursor")

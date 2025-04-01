@@ -3,6 +3,7 @@
 import aiosqlite
 import logging
 import os
+import asyncio  # Added for sleep in retry
 from pathlib import Path
 from typing import Optional, List, Tuple, Any
 
@@ -98,14 +99,10 @@ class DatabaseManager:
         """Checks if the connection is likely active."""
         if not self.connection:
             return False
-        try:
-            # Simple check: try to execute a no-op SQL command
-            # Note: This doesn't guarantee the connection is perfect, but catches closed connections.
-            # For aiosqlite, checking if connection object exists might be sufficient after close.
-            # A more robust check might involve `connection.execute('PRAGMA quick_check')` but adds overhead.
-            return True  # aiosqlite doesn't have an easy is_connected property like some sync drivers
-        except aiosqlite.Error:  # Catch potential errors on a closed connection
-            return False
+        # aiosqlite doesn't have a simple is_connected property.
+        # Checking if the object exists is the primary check after close_connection sets it to None.
+        # A more complex check could involve trying a PRAGMA, but adds overhead.
+        return True
 
     async def close_connection(self):
         """Closes the database connection if it's open."""
@@ -144,10 +141,8 @@ class DatabaseManager:
         for attempt in range(retries):
             try:
                 conn = await self._get_connection()
-                async with conn.executescript(
-                    schema_sql
-                ) as cursor:  # Use executescript context manager
-                    pass  # Context manager handles execution
+                # Correct usage: executescript is awaited directly
+                await conn.executescript(schema_sql)
                 await conn.commit()
                 logger.info(
                     "Database schema initialized successfully (tables created if not exist)."
@@ -511,9 +506,7 @@ class DatabaseManager:
             )
             try:
                 # Check if connection is still valid before rollback
-                if (
-                    self.connection and not self.connection.is_closed()
-                ):  # aiosqlite doesn't have is_closed, check if None
+                if self.connection and self._is_connection_active():  # Use helper
                     await conn.execute("ROLLBACK;")  # Rollback on error
             except aiosqlite.Error as rb_e:
                 logger.error(f"Error rolling back transaction: {rb_e}", exc_info=True)
