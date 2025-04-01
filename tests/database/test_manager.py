@@ -53,7 +53,7 @@ def mock_config():
 
 
 @pytest.fixture
-async def db_manager(mock_config):
+def db_manager(mock_config):  # Changed to sync fixture
     """Provides an instance of DatabaseManager with mocked config."""
     # Temporarily patch Path.mkdir during instantiation if needed, although
     # mocking the connection should prevent actual file operations.
@@ -68,7 +68,9 @@ async def db_manager(mock_config):
         manager.db_path = (
             Path(mock_config.database.db_path) / mock_config.database.dev_db_file
         )
-    return manager
+    # Reset connection state for each test using the fixture
+    manager.connection = None
+    return manager  # Return the instance directly
 
 
 @pytest.fixture
@@ -158,7 +160,6 @@ async def test_get_connection(mock_connect, db_manager, mock_aiosqlite_connectio
     """Test establishing a database connection."""
     mock_conn, _ = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn  # Make connect return our mock connection
-# db_manager.connection = None # Removed - fixture handles reset
 
     # First call should connect
     conn1 = await db_manager._get_connection()
@@ -185,7 +186,6 @@ async def test_close_connection(mock_connect, db_manager, mock_aiosqlite_connect
     """Test closing the database connection."""
     mock_conn, _ = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-# db_manager.connection = None # Removed - fixture handles reset
 
     # Establish connection
     await db_manager._get_connection()
@@ -224,7 +224,6 @@ async def test_initialize_db_success(
     mock_open.return_value.__enter__.return_value.read.return_value = (
         mock_schema_content
     )
-    db_manager.connection = None  # Ensure it connects
 
     await db_manager.initialize_db()
 
@@ -251,8 +250,7 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
     """Test adding a detection record."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.fetchone.return_value = (1,) # Simulate returning row ID
-    # db_manager.connection = None # Removed - fixture handles reset
+    mock_cursor.fetchone.return_value = (1,)  # Simulate returning row ID
 
     token = "TokenMint1"
     lp = "LPAddr1"
@@ -293,8 +291,7 @@ async def test_update_detection_status(
     """Test updating detection status."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.rowcount = 1 # Simulate one row updated
-    # db_manager.connection = None # Removed - fixture handles reset
+    mock_cursor.rowcount = 1  # Simulate one row updated
 
     token = "TokenMint1"
     status = "PASSED_FILTER"
@@ -326,8 +323,7 @@ async def test_update_detection_status_not_found(
     """Test updating status for a non-existent token."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.rowcount = 0 # Simulate zero rows updated
-    # db_manager.connection = None # Removed - fixture handles reset
+    mock_cursor.rowcount = 0  # Simulate zero rows updated
 
     success = await db_manager.update_detection_status(
         "NonExistentToken", "FAILED_FILTER"
@@ -345,8 +341,7 @@ async def test_add_position(mock_connect, db_manager, mock_aiosqlite_connection)
     """Test adding a position record."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.fetchone.return_value = (5,) # Simulate returning row ID 5
-    # db_manager.connection = None # Removed - fixture handles reset
+    mock_cursor.fetchone.return_value = (5,)  # Simulate returning row ID 5
 
     token = "TokenMintPos1"
     lp = "LPAddrPos1"
@@ -396,8 +391,7 @@ async def test_update_position_status(
     """Test updating position status."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    mock_cursor.rowcount = 1 # Simulate update success
-    # db_manager.connection = None # Removed - fixture handles reset
+    mock_cursor.rowcount = 1  # Simulate update success
 
     token = "TokenMintPos1"
     new_status = "SELL_PENDING"
@@ -434,8 +428,7 @@ async def test_get_active_position(mock_connect, db_manager, mock_aiosqlite_conn
         "token_mint": "TokenMintActive",
         "status": "ACTIVE",
     }[key]
-mock_cursor.fetchone.return_value = mock_row
-# db_manager.connection = None # Removed - fixture handles reset
+    mock_cursor.fetchone.return_value = mock_row
 
     token = "TokenMintActive"
     position = await db_manager.get_active_position(token)
@@ -471,9 +464,8 @@ async def test_get_all_active_positions(
         "token_mint": "Token2",
         "status": "ACTIVE",
     }[k]
-mock_rows = [row1, row2]
-mock_cursor.fetchall.return_value = mock_rows
-# db_manager.connection = None # Removed - fixture handles reset
+    mock_rows = [row1, row2]
+    mock_cursor.fetchall.return_value = mock_rows
 
     positions = await db_manager.get_all_active_positions()
 
@@ -495,7 +487,6 @@ async def test_move_position_to_trades_success(
     """Test successfully moving a position to the trades table."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    # db_manager.connection = None # Removed - fixture handles reset
 
     # Mock the SELECT call to find the position
     position_row_data = {
@@ -617,7 +608,6 @@ async def test_move_position_to_trades_not_found(
     """Test moving a position that doesn't exist or isn't active."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    # db_manager.connection = None # Removed - fixture handles reset
 
     # Mock the SELECT call to return None
     async def execute_side_effect(sql, params=None):
@@ -662,7 +652,6 @@ async def test_check_if_token_processed(
     """Test checking if a token exists in detections."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    # db_manager.connection = None # Removed - fixture handles reset
 
     # Test case 1: Token exists
     mock_cursor.fetchone = AsyncMock(return_value=(1,))  # Simulate finding a row
@@ -690,7 +679,6 @@ async def test_check_if_creator_processed(
     """Test checking if a creator exists in detections."""
     mock_conn, mock_cursor = mock_aiosqlite_connection
     mock_connect.return_value = mock_conn
-    # db_manager.connection = None # Removed - fixture handles reset
 
     # Test case 1: Creator exists
     mock_cursor.fetchone = AsyncMock(return_value=(1,))
