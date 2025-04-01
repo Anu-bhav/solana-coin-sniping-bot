@@ -31,3 +31,4 @@ Thumbs.db
 
 # Wallet files
 *.json
+.roo/
