@@ -521,31 +521,30 @@ async def test_move_position_to_trades_success(
         # print(f"Mock Execute Called: SQL='{sql}', Params={params}") # Debug print
         if "BEGIN TRANSACTION" in sql:
             # print("  -> Matched BEGIN")
-            # Return a new cursor mock for this specific call if needed,
-            # or reuse the main one if state doesn't interfere.
-            return mock_cursor  # Incorrect: execute doesn't return cursor for BEGIN
+            # Return None because execute doesn't return cursor for BEGIN
+            return None
         elif "SELECT * FROM positions" in sql:
             # print(f"  -> Matched SELECT for {params}")
             # IMPORTANT: Configure fetchone *here* to return the specific row for this SELECT
             mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
-            return mock_cursor
+            return mock_cursor  # SELECT returns a cursor
         elif "INSERT INTO trades" in sql:
             # print("  -> Matched INSERT")
             # Reset fetchone if necessary for subsequent calls within transaction
             mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor
+            return mock_cursor  # INSERT returns a cursor
         elif "DELETE FROM positions" in sql:
             # print("  -> Matched DELETE")
             mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor
+            return mock_cursor  # DELETE returns a cursor
         elif "COMMIT" in sql:
             # print("  -> Matched COMMIT")
             mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor  # Incorrect: execute doesn't return cursor for COMMIT
+            return None  # COMMIT doesn't return cursor
         elif "ROLLBACK" in sql:
             # print("  -> Matched ROLLBACK")
             mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor  # Incorrect: execute doesn't return cursor for ROLLBACK
+            return None  # ROLLBACK doesn't return cursor
         else:
             # Default cursor for other potential calls like PRAGMA
             # print(f"  -> Matched OTHER ({sql}), returning default cursor")
@@ -630,12 +629,12 @@ async def test_move_position_to_trades_not_found(
     # Mock the SELECT call to return None
     async def execute_side_effect(sql, params=None):
         if "BEGIN TRANSACTION" in sql:
-            return mock_cursor
+            return None  # execute doesn't return cursor
         elif "SELECT * FROM positions" in sql:
             mock_cursor.fetchone = AsyncMock(return_value=None)  # Simulate not found
             return mock_cursor
         elif "ROLLBACK" in sql:
-            return mock_cursor
+            return None  # execute doesn't return cursor
         else:
             mock_cursor.fetchone = AsyncMock(return_value=None)
             return mock_cursor
@@ -676,14 +675,17 @@ async def test_check_if_token_processed(
     processed = await db_manager.check_if_token_processed("ExistingToken")
     assert processed is True
     # Check the last call to execute on the cursor
+    mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_with(
         "SELECT 1 FROM detections WHERE token_mint = ? LIMIT 1;", ("ExistingToken",)
     )
 
     # Test case 2: Token does not exist
+    mock_conn.cursor.reset_mock()  # Reset cursor mock for next call
     mock_cursor.fetchone = AsyncMock(return_value=None)  # Simulate not finding a row
     processed = await db_manager.check_if_token_processed("NewToken")
     assert processed is False
+    mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_with(
         "SELECT 1 FROM detections WHERE token_mint = ? LIMIT 1;", ("NewToken",)
     )
@@ -702,6 +704,7 @@ async def test_check_if_creator_processed(
     mock_cursor.fetchone = AsyncMock(return_value=(1,))
     processed = await db_manager.check_if_creator_processed("ExistingCreator")
     assert processed is True
+    mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_with(
         "SELECT 1 FROM detections WHERE creator_address = ? LIMIT 1;",
         ("ExistingCreator",),
@@ -709,9 +712,11 @@ async def test_check_if_creator_processed(
     execute_call_count = mock_cursor.execute.call_count
 
     # Test case 2: Creator does not exist
+    mock_conn.cursor.reset_mock()  # Reset cursor mock
     mock_cursor.fetchone = AsyncMock(return_value=None)
     processed = await db_manager.check_if_creator_processed("NewCreator")
     assert processed is False
+    mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_with(
         "SELECT 1 FROM detections WHERE creator_address = ? LIMIT 1;", ("NewCreator",)
     )
@@ -719,11 +724,13 @@ async def test_check_if_creator_processed(
     last_call_count = mock_cursor.execute.call_count
 
     # Test case 3: Creator address is None or empty
+    mock_conn.cursor.reset_mock()  # Reset cursor mock
     processed = await db_manager.check_if_creator_processed(None)  # type: ignore
     assert processed is False
     processed = await db_manager.check_if_creator_processed("")
     assert processed is False
     # Ensure execute wasn't called for None/empty
+    mock_conn.cursor.assert_not_called()  # Cursor shouldn't even be obtained
     assert (
         mock_cursor.execute.call_count == last_call_count
     )  # Count should not increase
