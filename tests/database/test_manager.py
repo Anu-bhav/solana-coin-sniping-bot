@@ -247,7 +247,8 @@ async def test_initialize_db_success(
     await db_manager.initialize_db()
 
     # Assertions
-    schema_file_path = Path(__file__).parent / "schema.sql"
+    # The DatabaseManager resolves schema path relative to its own file location
+    schema_file_path = project_root / "src" / "database" / "schema.sql"
     # mock_exists is called on the Path object representing the schema file
     # We rely on mock_open to verify the correct path was used.
     mock_exists.assert_called_once()  # Check that exists() was called on the Path object
