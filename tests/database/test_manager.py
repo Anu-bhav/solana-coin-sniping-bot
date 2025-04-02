@@ -331,7 +331,8 @@ async def test_update_detection_status(
     cleaned_actual_sql = " ".join(args[0].split())
     assert cleaned_actual_sql == cleaned_expected_sql
     assert args[1] == (status, reason, token)
-    mock_conn.commit.assert_called_once()
+    # Assert that commit was called exactly once *during* this operation
+    assert commit_count_after == commit_count_before + 1
 
 
 @pytest.mark.asyncio
@@ -347,13 +348,17 @@ async def test_update_detection_status_not_found(
     success = await db_manager.update_detection_status(
         "NonExistentToken", "FAILED_FILTER"
     )
-    # Reset commit mock after connection is established and initial commit happens
-    mock_conn.commit.reset_mock()
+    commit_count_before = mock_conn.commit.call_count
+    success = await db_manager.update_detection_status(
+        "NonExistentToken", "FAILED_FILTER"
+    )  # Re-call the function after getting count
+    commit_count_after = mock_conn.commit.call_count
 
     assert success is False
     mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_once()
-    mock_conn.commit.assert_called_once()
+    # Assert that commit was called exactly once *during* this operation
+    assert commit_count_after == commit_count_before + 1
 
 
 @pytest.mark.asyncio
