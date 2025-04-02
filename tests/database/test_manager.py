@@ -563,41 +563,44 @@ async def test_move_position_to_trades_success(
             "SELECT * FROM positions WHERE token_mint = ? AND status = 'ACTIVE';",
             (token,),
         ),
-        # Check INSERT call (arguments checked separately for clarity)
-        call(
-            pytest.ANY,  # Match any SQL containing INSERT INTO trades
+        call(  # The INSERT call
+            pytest.ANY,  # Match the INSERT SQL string (verified below)
             (
                 token,
                 "LPMove",
-                "2023-01-01 10:00:00",
-                0.2,
-                2000.0,
-                0.0001,
-                "BuySigMove",
-                None,
-                sell_tokens,
-                sell_sol,
-                sell_price,
-                sell_sig,
-                None,
-                sell_reason,
-                0.2,
-                102.0,
+                "2023-01-01 10:00:00",  # buy_timestamp from mock data
+                0.2,  # buy_amount_sol from mock data
+                2000.0,  # buy_amount_tokens from mock data
+                0.0001,  # buy_price from mock data
+                "BuySigMove",  # buy_tx_signature from mock data
+                None,  # buy_provider_identifier from mock data
+                sell_tokens,  # sell_amount_tokens from test args
+                sell_sol,  # sell_amount_sol from test args
+                sell_price,  # sell_price from test args
+                sell_sig,  # sell_tx_signature from test args
+                None,  # sell_provider_identifier (default None)
+                sell_reason,  # sell_reason from test args
+                0.2,  # pnl_sol (sell_sol - buy_sol)
+                102.0,  # pnl_percentage ((sell_price / buy_price) - 1) * 100
             ),
-        ),  # PnL calculated
-        call("DELETE FROM positions WHERE id = ?;", (10,)),
-        call("COMMIT;"),
+        ),
+        call("DELETE FROM positions WHERE id = ?;", (10,)),  # id from mock data
     ]
-    # Filter out PRAGMA call if it happens during connection setup
-    # We are now checking calls on the *cursor*, not the connection's execute
-    actual_cursor_calls = mock_cursor.execute.call_args_list
-    # The expected calls list was renamed above
-    assert actual_cursor_calls == expected_cursor_calls
+    # Check that the cursor execute method was called with the expected sequence
+    # Note: The cursor is obtained *within* the transaction context manager in the source code.
+    # We assert calls on the mock_cursor directly.
+    mock_cursor.execute.assert_has_calls(expected_cursor_calls, any_order=False)
 
-    # Verify the INSERT SQL structure specifically
+    # Verify commit was called on the connection (signifying successful transaction)
+    mock_conn.commit.assert_called_once()
+    mock_conn.rollback.assert_not_called()  # Ensure rollback wasn't called
+
+    # Verify the INSERT SQL structure specifically (optional but good practice)
     # Find the insert call within the cursor's calls
     insert_call = next(
-        c for c in actual_cursor_calls if "INSERT INTO trades" in c.args[0]
+        c
+        for c in mock_cursor.execute.call_args_list
+        if "INSERT INTO trades" in c.args[0]
     )
     insert_sql_actual = " ".join(insert_call.args[0].split())
     insert_sql_expected = " ".join(
