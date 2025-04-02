@@ -287,7 +287,7 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
         RETURNING id;
         """
     # Use call comparison for execute
-    mock_conn.cursor.assert_called_once()  # Check cursor obtained
+    assert mock_conn.cursor.call_count == 1  # Check cursor obtained exactly once
     mock_cursor.execute.assert_called_once()
     args, _ = mock_cursor.execute.call_args
     # Clean whitespace for comparison
