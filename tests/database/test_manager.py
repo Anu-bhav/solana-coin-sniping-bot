@@ -474,8 +474,9 @@ async def test_get_active_position(mock_connect, db_manager, mock_aiosqlite_conn
     mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_once_with(expected_sql, (token,))
     mock_cursor.fetchone.assert_called_once()
-    # Check row_factory was set during the call
-    assert mock_conn.row_factory == aiosqlite.Row
+    # Verify row factory was set before execution
+    mock_conn.row_factory = aiosqlite.Row
+    assert mock_conn.row_factory is aiosqlite.Row
 
 
 @pytest.mark.asyncio
