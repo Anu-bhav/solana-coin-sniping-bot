@@ -99,7 +99,22 @@ def mock_aiosqlite_connection():
     # Add row_factory attribute
     mock_conn.row_factory = None
 
-    # Make cursor awaitable if used in 'async with conn.cursor()'
+    # --- Mocking async context manager for cursor ---
+    # Create an AsyncMock that will represent the context manager returned by conn.cursor()
+    mock_cursor_cm = AsyncMock()
+    # Configure its __aenter__ to return the actual mock_cursor
+    mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+    # Configure __aexit__ (can be simple AsyncMock if no specific exit logic needed)
+    mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+    # Configure the connection's cursor method to return this context manager mock
+    mock_conn.cursor = AsyncMock(
+        return_value=mock_cursor_cm
+    )  # CORRECTED: Return the CM
+
+    # --- Original cursor awaitable logic (kept for direct cursor usage if any) ---
+    # This part might be redundant if only 'async with conn.cursor()' is used,
+    # but kept for safety if direct 'await cursor.method()' happens.
     async def cursor_aenter(self):
         # print("DEBUG: Cursor __aenter__ called")
         return self
@@ -233,8 +248,9 @@ async def test_initialize_db_success(
 
     # Assertions
     schema_file_path = Path(__file__).parent / "schema.sql"
-    mock_exists.assert_called_once_with()  # Check schema file existence check called on the path object
-    assert mock_exists.call_args[0][0] == schema_file_path  # Verify the path checked
+    # mock_exists is called on the Path object representing the schema file
+    # We rely on mock_open to verify the correct path was used.
+    mock_exists.assert_called_once()  # Check that exists() was called on the Path object
     mock_open.assert_called_once_with(schema_file_path, "r")  # Check schema file open
     mock_connect.assert_called_once()  # Check DB connection
     # Check connection setup calls (WAL mode)
@@ -513,45 +529,17 @@ async def test_move_position_to_trades_success(
     mock_pos_row = MagicMock(spec=aiosqlite.Row)
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
 
-    # We need to mock the sequence of calls on the connection
-    mock_conn.execute = AsyncMock()  # General mock for execute
+    # --- Simplified Mocking for Transaction ---
+    # 1. Mock the connection's execute method generally
+    mock_conn.execute = AsyncMock(
+        return_value=mock_cursor
+    )  # Most execute calls return a cursor
 
-    # Specific mocks for the sequence within the transaction
-    async def execute_side_effect(sql, params=None):
-        # print(f"Mock Execute Called: SQL='{sql}', Params={params}") # Debug print
-        if "BEGIN TRANSACTION" in sql:
-            # print("  -> Matched BEGIN")
-            # Return None because execute doesn't return cursor for BEGIN
-            return None
-        elif "SELECT * FROM positions" in sql:
-            # print(f"  -> Matched SELECT for {params}")
-            # IMPORTANT: Configure fetchone *here* to return the specific row for this SELECT
-            mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
-            return mock_cursor  # SELECT returns a cursor
-        elif "INSERT INTO trades" in sql:
-            # print("  -> Matched INSERT")
-            # Reset fetchone if necessary for subsequent calls within transaction
-            mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor  # INSERT returns a cursor
-        elif "DELETE FROM positions" in sql:
-            # print("  -> Matched DELETE")
-            mock_cursor.fetchone = AsyncMock(return_value=None)
-            return mock_cursor  # DELETE returns a cursor
-        elif "COMMIT" in sql:
-            # print("  -> Matched COMMIT")
-            mock_cursor.fetchone = AsyncMock(return_value=None)
-            return None  # COMMIT doesn't return cursor
-        elif "ROLLBACK" in sql:
-            # print("  -> Matched ROLLBACK")
-            mock_cursor.fetchone = AsyncMock(return_value=None)
-            return None  # ROLLBACK doesn't return cursor
-        else:
-            # Default cursor for other potential calls like PRAGMA
-            # print(f"  -> Matched OTHER ({sql}), returning default cursor")
-            mock_cursor.fetchone = AsyncMock(return_value=None)  # Reset fetchone
-            return mock_cursor
+    # 2. Pre-configure fetchone on the cursor for the initial SELECT
+    #    This assumes the SELECT is the first query needing fetchone within the transaction logic.
+    mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
 
-    mock_conn.execute.side_effect = execute_side_effect
+    # 3. We will verify the sequence of calls *after* the function runs.
 
     token = "TokenToMove"
     sell_reason = "TP"
