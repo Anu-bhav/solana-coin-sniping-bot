@@ -314,9 +314,9 @@ async def test_update_detection_status(
     status = "PASSED_FILTER"
     reason = "Looks good"
 
+    commit_count_before = mock_conn.commit.call_count
     success = await db_manager.update_detection_status(token, status, reason)
-    # Reset commit mock after connection is established and initial commit happens
-    mock_conn.commit.reset_mock()
+    commit_count_after = mock_conn.commit.call_count
 
     assert success is True
     expected_sql = """
