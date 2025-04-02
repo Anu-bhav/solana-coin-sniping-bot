@@ -313,6 +313,8 @@ async def test_update_detection_status(
     reason = "Looks good"
 
     success = await db_manager.update_detection_status(token, status, reason)
+    # Reset commit mock after connection is established and initial commit happens
+    mock_conn.commit.reset_mock()
 
     assert success is True
     expected_sql = """
@@ -343,6 +345,8 @@ async def test_update_detection_status_not_found(
     success = await db_manager.update_detection_status(
         "NonExistentToken", "FAILED_FILTER"
     )
+    # Reset commit mock after connection is established and initial commit happens
+    mock_conn.commit.reset_mock()
 
     assert success is False
     mock_conn.cursor.assert_called_once()
@@ -368,6 +372,8 @@ async def test_add_position(mock_connect, db_manager, mock_aiosqlite_connection)
     result_id = await db_manager.add_position(
         token, lp, buy_sol, buy_sig, buy_tokens, buy_price
     )
+    # Reset commit mock after connection is established and initial commit happens
+    mock_conn.commit.reset_mock()
 
     assert result_id == 5
     expected_sql = """
