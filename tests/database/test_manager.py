@@ -470,8 +470,8 @@ async def test_get_active_position(mock_connect, db_manager, mock_aiosqlite_conn
     mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_once_with(expected_sql, (token,))
     mock_cursor.fetchone.assert_called_once()
-    # Check row_factory *after* the call, as it's set within the method
-    assert mock_conn.row_factory is aiosqlite.Row
+    # Check row_factory was set during the call
+    assert mock_conn.row_factory == aiosqlite.Row
 
 
 @pytest.mark.asyncio
@@ -541,11 +541,17 @@ async def test_move_position_to_trades_success(
     mock_pos_row = MagicMock(spec=aiosqlite.Row)
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
 
-    # --- Simplified Mocking for Transaction ---
-    # Pre-configure fetchone for the initial SELECT call
+    # Mock transaction flow
+    mock_conn.execute = AsyncMock(
+        side_effect=[
+            None,  # BEGIN
+            mock_cursor,  # SELECT
+            mock_cursor,  # INSERT
+            mock_cursor,  # DELETE
+            None,  # COMMIT
+        ]
+    )
     mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
-    # Ensure other cursor methods are standard AsyncMocks if needed
-    mock_cursor.execute = AsyncMock(return_value=mock_cursor)  # execute returns cursor
 
     token = "TokenToMove"
     sell_reason = "TP"
