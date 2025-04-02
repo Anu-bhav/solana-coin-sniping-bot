@@ -554,10 +554,12 @@ async def test_move_position_to_trades_success(
 
     assert success is True
 
-    # Verify calls within the transaction
-    expected_calls = [
-        call("BEGIN TRANSACTION;"),
-        call(
+    # Verify calls using assert_has_calls with the simplified mocking
+    # Note: We don't mock BEGIN/COMMIT/ROLLBACK explicitly anymore with execute,
+    # but rely on the connection's commit/rollback mocks being called.
+    # The cursor's execute method handles the SQL queries.
+    expected_cursor_calls = [
+        call(  # The initial SELECT call
             "SELECT * FROM positions WHERE token_mint = ? AND status = 'ACTIVE';",
             (token,),
         ),
@@ -587,13 +589,16 @@ async def test_move_position_to_trades_success(
         call("COMMIT;"),
     ]
     # Filter out PRAGMA call if it happens during connection setup
-    actual_calls = [
-        c for c in mock_conn.execute.call_args_list if "PRAGMA" not in c.args[0]
-    ]
-    assert actual_calls == expected_calls
+    # We are now checking calls on the *cursor*, not the connection's execute
+    actual_cursor_calls = mock_cursor.execute.call_args_list
+    # The expected calls list was renamed above
+    assert actual_cursor_calls == expected_cursor_calls
 
     # Verify the INSERT SQL structure specifically
-    insert_call = next(c for c in actual_calls if "INSERT INTO trades" in c.args[0])
+    # Find the insert call within the cursor's calls
+    insert_call = next(
+        c for c in actual_cursor_calls if "INSERT INTO trades" in c.args[0]
+    )
     insert_sql_actual = " ".join(insert_call.args[0].split())
     insert_sql_expected = " ".join(
         """
