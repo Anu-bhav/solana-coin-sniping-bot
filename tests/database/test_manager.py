@@ -418,6 +418,8 @@ async def test_update_position_status(
     new_status = "SELL_PENDING"
 
     success = await db_manager.update_position_status(token, new_status)
+    # Reset commit mock after connection is established and initial commit happens
+    mock_conn.commit.reset_mock()
 
     assert success is True
     expected_sql = """
