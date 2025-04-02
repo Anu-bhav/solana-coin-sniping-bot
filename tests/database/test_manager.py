@@ -99,32 +99,24 @@ def mock_aiosqlite_connection():
     # Add row_factory attribute
     mock_conn.row_factory = None
 
-    # --- Mocking async context manager for cursor ---
-    # Create an AsyncMock that will represent the context manager returned by conn.cursor()
-    mock_cursor_cm = AsyncMock()
-    # Configure its __aenter__ to return the actual mock_cursor
-    mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
-    # Configure __aexit__ (can be simple AsyncMock if no specific exit logic needed)
-    mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+    # --- Corrected Mocking for async with cursor ---
+    # conn.cursor() is SYNCHRONOUS and returns the cursor object.
+    # The async context manager protocol applies to the CURSOR object itself.
+    mock_conn.cursor = MagicMock(
+        return_value=mock_cursor
+    )  # conn.cursor returns the mock cursor directly
 
-    # Configure the connection's cursor method to return this context manager mock
-    mock_conn.cursor = AsyncMock(
-        return_value=mock_cursor_cm
-    )  # CORRECTED: Return the CM
+    # Make the mock_cursor itself support the async context manager protocol
+    async def mock_cursor_aenter():
+        # print("DEBUG: Mock Cursor __aenter__ called")
+        return mock_cursor  # __aenter__ should return the object to be used in 'as'
 
-    # --- Original cursor awaitable logic (kept for direct cursor usage if any) ---
-    # This part might be redundant if only 'async with conn.cursor()' is used,
-    # but kept for safety if direct 'await cursor.method()' happens.
-    async def cursor_aenter(self):
-        # print("DEBUG: Cursor __aenter__ called")
-        return self
+    async def mock_cursor_aexit(exc_type, exc, tb):
+        # print(f"DEBUG: Mock Cursor __aexit__ called with {exc_type}")
+        await mock_cursor.close()  # Simulate closing the cursor on exit
 
-    async def cursor_aexit(self, exc_type, exc, tb):
-        # print("DEBUG: Cursor __aexit__ called")
-        await self.close()  # Simulate close on exit
-
-    mock_cursor.__aenter__ = cursor_aenter.__get__(mock_cursor)
-    mock_cursor.__aexit__ = cursor_aexit.__get__(mock_cursor)
+    mock_cursor.__aenter__ = AsyncMock(side_effect=mock_cursor_aenter)
+    mock_cursor.__aexit__ = AsyncMock(side_effect=mock_cursor_aexit)
 
     # Make connection awaitable for 'async with conn:' (though less common)
     async def conn_aenter(self):
@@ -279,6 +271,8 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
     creator = "Creator1"
 
     result_id = await db_manager.add_detection(token, lp, base, creator)
+    # Reset commit mock after connection is established and initial commit happens
+    mock_conn.commit.reset_mock()
 
     assert result_id == 1
     expected_sql = """
@@ -530,17 +524,30 @@ async def test_move_position_to_trades_success(
     mock_pos_row = MagicMock(spec=aiosqlite.Row)
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
 
-    # --- Simplified Mocking for Transaction ---
-    # 1. Mock the connection's execute method generally
-    mock_conn.execute = AsyncMock(
-        return_value=mock_cursor
-    )  # Most execute calls return a cursor
+    # --- Mocking for Transaction with Side Effect ---
+    # We need mock_cursor.execute to behave differently based on the SQL
 
-    # 2. Pre-configure fetchone on the cursor for the initial SELECT
-    #    This assumes the SELECT is the first query needing fetchone within the transaction logic.
-    mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+    async def cursor_execute_side_effect(sql, params=None):
+        # print(f"DEBUG: Cursor Execute Side Effect: SQL='{sql}', Params={params}") # Debug print
+        if "SELECT * FROM positions" in sql and params == (token,):
+            # print("  -> Matched SELECT, configuring fetchone")
+            # Configure fetchone *specifically for this call* to return the row
+            mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+        else:
+            # print("  -> Matched other SQL (INSERT/DELETE), resetting fetchone")
+            # For INSERT/DELETE or other calls, reset fetchone (or set as needed)
+            mock_cursor.fetchone = AsyncMock(
+                return_value=None
+            )  # Default for non-SELECT
+        return mock_cursor  # Always return the cursor itself from execute
 
-    # 3. We will verify the sequence of calls *after* the function runs.
+    # Assign the side effect to the cursor's execute method
+    mock_cursor.execute = AsyncMock(side_effect=cursor_execute_side_effect)
+
+    # Mock connection's execute separately if needed for PRAGMA etc.
+    # For simplicity, assume connection.execute isn't directly called in the tested logic path
+    # If it is (e.g., for BEGIN/COMMIT/ROLLBACK if not handled by connection methods), mock it:
+    # mock_conn.execute = AsyncMock(return_value=mock_cursor) # Or specific side effect
 
     token = "TokenToMove"
     sell_reason = "TP"
