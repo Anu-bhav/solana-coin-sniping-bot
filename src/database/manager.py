@@ -260,55 +260,39 @@ class DatabaseManager:
         buy_price: Optional[float] = None,
         buy_provider_identifier: Optional[str] = None,
     ) -> Optional[int]:
-        """
-        Adds a new position record after a successful buy. Uses UPSERT.
-
-        Args:
-            token_mint: The token mint address.
-            lp_address: The liquidity pool address.
-            buy_amount_sol: The amount of SOL spent.
-            buy_tx_signature: The signature of the buy transaction.
-            buy_amount_tokens: Amount of tokens received (optional).
-            buy_price: Price per token at buy time (optional).
-            buy_provider_identifier: External provider ID (optional).
-
-        Returns:
-            The row ID of the inserted/updated record, or None on failure.
-        """
+        """UPSERT position with transaction support."""
         sql = """
-        INSERT INTO positions (token_mint, lp_address, buy_amount_sol, buy_tx_signature, buy_amount_tokens, buy_price, buy_provider_identifier, status, last_updated)
+        INSERT INTO positions (token_mint, lp_address, buy_amount_sol,
+            buy_tx_signature, buy_amount_tokens, buy_price,
+            buy_provider_identifier, status, last_updated)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', CURRENT_TIMESTAMP)
         ON CONFLICT(token_mint) DO UPDATE SET
-            -- If a position already exists, log warning and maybe update timestamp? Avoid overwriting active trade.
             last_updated = CURRENT_TIMESTAMP
-            -- Consider adding a specific status like 'DUPLICATE_BUY_ATTEMPT' if needed
         RETURNING id;
         """
         try:
-            conn = await self._get_connection()
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    sql,
-                    (
-                        token_mint,
-                        lp_address,
-                        buy_amount_sol,
-                        buy_tx_signature,
-                        buy_amount_tokens,
-                        buy_price,
-                        buy_provider_identifier,
-                    ),
-                )
-                result = await cursor.fetchone()
-            await conn.commit()
-            # Check if conflict occurred (might need to inspect result or use different UPSERT)
-            # For now, assume success means inserted or updated timestamp
-            logger.info(
-                f"Position added/updated for {token_mint}, ID: {result[0] if result else 'N/A'}"
-            )
-            return result[0] if result else None
+            async with await self._get_connection() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute(
+                        sql,
+                        (
+                            token_mint,
+                            lp_address,
+                            buy_amount_sol,
+                            buy_tx_signature,
+                            buy_amount_tokens,
+                            buy_price,
+                            buy_provider_identifier,
+                        ),
+                    )
+                    result = await cursor.fetchone()
+                    await conn.commit()
+                    return result[0] if result else None
+        except aiosqlite.IntegrityError as e:
+            logger.warning(f"Position conflict for {token_mint}: {e}")
+            return None
         except aiosqlite.Error as e:
-            logger.error(f"Error in add_position for {token_mint}: {e}", exc_info=True)
+            logger.error(f"Position error: {e}")
             return None
 
     async def update_position_status(self, token_mint: str, status: str) -> bool:
