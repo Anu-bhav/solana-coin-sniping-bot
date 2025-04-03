@@ -11,8 +11,8 @@
     *   [ ] **Testing:** Unit test `initialize_db` (mock `aiosqlite`, check connection, check execute script called).
 *   [x] Implement `async add_detection(...)`.
     *   [x] **Testing:** Unit test adding a new detection record.
-*   [ ] Implement `async update_detection_status(...)`.
-    *   [ ] **Testing:** Unit test updating status/reason for an existing detection.
+*   [x] Implement `async update_detection_status(...)`.
+    *   [x] **Testing:** Unit test updating status/reason for an existing detection.
 *   [ ] Implement `async add_position(...)` (preferably using UPSERT).
     *   [ ] **Testing:** Unit test adding a new position. Test updating an existing position via UPSERT.
 *   [ ] Implement `async update_position_status(...)`.
