@@ -87,16 +87,23 @@ filtering:
 
   # Add more filter stages here later if needed (e.g., velocity, volume)
 
+# --- Solana Network Settings ---
+solana:
+  rpc_url: ${SOLANA_RPC_URL}
+  ws_url: ${SOLANA_WS_URL}
+  compute_units: 1_400_000
+  priority_fee: 10000
+  program_ids:
+    system: "11111111111111111111111111111111"
+    token: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    associated_token: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+
 # --- Transaction Execution Settings ---
 execution:
   enabled: true # Set to false to only detect and filter
   provider: SNIPEROO_API # Options: SELF_BUILT, SNIPEROO_API, JITO_BUNDLER
   buy_amount_sol: 0.005 # Amount of SOL to spend per buy (EXTREMELY SMALL FOR DEVNET)
   slippage_percent: 30.0 # Slippage tolerance percentage (e.g., 30.0 for 30%)
-
-  # --- Settings for provider: SELF_BUILT ---
-  compute_unit_limit: 1_400_000 # Solana Compute Budget Unit Limit
-  compute_unit_price_micro_lamports: 10000 # Priority Fee per Compute Unit (adjust based on network)
 
   # --- Settings for provider: SNIPEROO_API ---
   sniperoo:
