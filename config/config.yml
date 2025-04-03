@@ -18,8 +18,10 @@ api_keys:
   jito: ${JITO_API_KEY}              # Optional MEV protection service
 # Wallet Configuration
 wallet:
-  keyfile: ${WALLET_KEYFILE}        # Path to keypair file
-  fee_payer: ${FEE_PAYER_ADDRESS}   # Dedicated fee payer account
+  private_key: ${DEV_WALLET_PRIVATE_KEY}  # Base58 encoded key
+  fee_payer: ${FEE_PAYER_ADDRESS}        # Dedicated fee payer account
+  # Security Note: Private key should only be set in development
+  # For production, use hardware wallet integration
   max_signatures: 1500              # Max signatures per second
   priority_fee: auto                # auto|number (microlamports)
 
