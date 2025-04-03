@@ -250,6 +250,37 @@ class DatabaseManager:
             )
             return False
 
+    def _validate_db_config(self) -> None:
+        """Validate database configuration during initialization."""
+        db_config = self.config.database
+        if not db_config.db_path or not isinstance(db_config.db_path, str):
+            raise ValueError("Invalid database path in configuration")
+
+        env = self.config.general.app_env
+        if env not in ("production", "development", "testing"):
+            raise ValueError(f"Invalid environment '{env}' in configuration")
+
+    def _sql_retry_decorator(self, max_retries: int = 3):
+        """Decorator for SQL operations with retry logic."""
+
+        def decorator(func):
+            async def wrapper(*args, **kwargs):
+                for attempt in range(max_retries):
+                    try:
+                        return await func(*args, **kwargs)
+                    except aiosqlite.OperationalError as e:
+                        if "locked" not in str(e) or attempt == max_retries - 1:
+                            raise
+                        wait = 0.5 * (attempt + 1)
+                        logger.warning(f"DB locked, retrying in {wait}s...")
+                        await asyncio.sleep(wait)
+                return None
+
+            return wrapper
+
+        return decorator
+
+    @_sql_retry_decorator()
     async def add_position(
         self,
         token_mint: str,
@@ -391,8 +422,19 @@ class DatabaseManager:
         sell_provider_identifier: Optional[str] = None,
     ) -> bool:
         """
-        Moves a closed position to trades table with transaction support.
-        Implements retry logic for database locked errors.
+        Atomically moves a closed position to the trades table with transaction support.
+
+        Args:
+            token_mint: The mint address of the token position
+            sell_reason: Reason for closing the position
+            sell_tx_signature: Transaction signature of the sell order
+            sell_amount_tokens: Amount of tokens sold (optional)
+            sell_amount_sol: Amount of SOL received (optional)
+            sell_price: Price per token in SOL (optional)
+            sell_provider_identifier: Provider ID for the sell order (optional)
+
+        Returns:
+            True if successful, False otherwise
         """
         retries = 3
         for attempt in range(retries):
@@ -401,32 +443,57 @@ class DatabaseManager:
                     async with conn.cursor() as cursor:
                         await cursor.execute("BEGIN TRANSACTION")
 
-                        # Get position data
+                        # Get active position
                         await cursor.execute(
                             """SELECT * FROM positions
-                            WHERE token_mint=? AND status='ACTIVE'""",
+                            WHERE token_mint = ? AND status = 'ACTIVE'
+                            FOR UPDATE""",
                             (token_mint,),
                         )
                         position = await cursor.fetchone()
 
                         if not position:
-                            logger.warning(f"No active position found for {token_mint}")
+                            logger.warning(f"No active position for {token_mint}")
                             await cursor.execute("ROLLBACK")
                             return False
 
-                        # Insert into trades
+                        # Insert into trades with all position data
                         await cursor.execute(
-                            """INSERT INTO trades(...) VALUES(...)
-                            RETURNING id""",
-                            (...,),
+                            """INSERT INTO trades (
+                                token_mint, lp_address, buy_amount_sol, buy_tx_signature,
+                                buy_amount_tokens, buy_price, buy_provider_identifier,
+                                sell_amount_tokens, sell_amount_sol, sell_price,
+                                sell_provider_identifier, sell_tx_signature, sell_reason,
+                                status, created_at, closed_at
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                'CLOSED', ?, CURRENT_TIMESTAMP
+                            ) RETURNING id""",
+                            (
+                                position["token_mint"],
+                                position["lp_address"],
+                                position["buy_amount_sol"],
+                                position["buy_tx_signature"],
+                                position["buy_amount_tokens"],
+                                position["buy_price"],
+                                position["buy_provider_identifier"],
+                                sell_amount_tokens,
+                                sell_amount_sol,
+                                sell_price,
+                                sell_provider_identifier,
+                                sell_tx_signature,
+                                sell_reason,
+                                position["last_updated"],
+                            ),
                         )
 
                         # Delete from positions
                         await cursor.execute(
-                            "DELETE FROM positions WHERE id=?", (position["id"],)
+                            "DELETE FROM positions WHERE id = ?", (position["id"],)
                         )
 
-                        await cursor.execute("COMMIT")
+                        await conn.commit()
+                        logger.info(f"Moved {token_mint} to trades")
                         return True
 
             except aiosqlite.OperationalError as e:
@@ -435,10 +502,10 @@ class DatabaseManager:
                     logger.warning(f"DB locked, retrying in {wait}s...")
                     await asyncio.sleep(wait)
                     continue
-                logger.error(f"Failed to move position: {e}")
+                logger.error(f"Move position failed: {e}", exc_info=True)
                 return False
             except aiosqlite.Error as e:
-                logger.error(f"Database error: {e}")
+                logger.error(f"Database error: {e}", exc_info=True)
                 return False
 
     async def check_if_token_processed(self, token_mint: str) -> bool:
@@ -465,29 +532,39 @@ class DatabaseManager:
             return False  # Assume not processed on error
 
     async def check_if_creator_processed(self, creator_address: str) -> bool:
-        """Check if creator exists in detections with retry logic."""
+        """
+        Checks if a creator has already been processed in any detection.
+
+        Args:
+            creator_address: The creator's wallet address to check
+
+        Returns:
+            True if creator exists in detections table, False otherwise
+        """
         if not creator_address:
             return False
 
         retries = 3
         sql = """SELECT 1 FROM detections
                WHERE creator_address = ?
-               LIMIT 1"""
+               AND status NOT IN ('FAILED_FILTER', 'REJECTED')
+               LIMIT 1;"""
 
         for attempt in range(retries):
             try:
                 async with await self._get_connection() as conn:
                     async with conn.cursor() as cursor:
                         await cursor.execute(sql, (creator_address,))
-                        return bool(await cursor.fetchone())
+                        result = await cursor.fetchone()
+                        return bool(result)
             except aiosqlite.OperationalError as e:
                 if "locked" in str(e) and attempt < retries - 1:
                     wait = 0.5 * (attempt + 1)
-                    logger.warning(f"DB locked, retrying in {wait}s...")
+                    logger.warning(f"Database locked, retrying in {wait}s...")
                     await asyncio.sleep(wait)
                     continue
-                logger.error(f"Creator check failed: {e}")
+                logger.error(f"Creator check failed: {e}", exc_info=True)
                 return False
             except aiosqlite.Error as e:
-                logger.error(f"DB error: {e}")
+                logger.error(f"Database error during creator check: {e}", exc_info=True)
                 return False
