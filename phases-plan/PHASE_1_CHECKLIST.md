@@ -5,7 +5,7 @@
 **Database (`DatabaseManager` & `schema.sql`):**
 
 *   [ ] Define `database/schema.sql` with tables: `detections`, `positions`, `trades`. Include correct types, PKs, indexes.
-*   [ ] Implement `DatabaseManager` class in `src/database/manager.py`.
+*   [x] Implement `DatabaseManager` class in `src/database/manager.py`.
 *   [ ] Implement `__init__` loading DB path from config.
 *   [ ] Implement `async initialize_db()` creating tables from schema.
     *   [ ] **Testing:** Unit test `initialize_db` (mock `aiosqlite`, check connection, check execute script called).
