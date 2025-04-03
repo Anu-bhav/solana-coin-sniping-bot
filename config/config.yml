@@ -1,149 +1,39 @@
-# config/config.yml - Comprehensive Template
-# --- General Settings ---
-general:
-  app_name: SolanaPumpSniper
-  # app_env is set by loader based on APP_ENV environment variable (development or production)
-  log_level: INFO # Or DEBUG, WARNING, ERROR
-  dry_run: true   # CRITICAL: Keep true for testing! False = Live Trading.
-
-# --- Database Settings ---
-database:
-  db_path: db # Relative path to db folder
-  dev_db_file: devnet_sniper.sqlite
-  prod_db_file: mainnet_sniper.sqlite
-
-# --- RPC Settings ---
-rpc:
-  # Core URLs are loaded from .env.* files (DEVNET_HTTP_URL, etc.)
-  # You can optionally override or provide specific provider URLs here:
-  # helius_devnet_http_url: https://devnet.helius-rpc.com/?api-key=YOUR_KEY_IF_NEEDED
-  # helius_mainnet_http_url: https://mainnet.helius-rpc.com/?api-key=YOUR_KEY_IF_NEEDED
-  # quicknode_devnet_http_url: https://example-devnet.solana-devnet.quiknode.pro/YOUR_KEY/
-  # quicknode_mainnet_http_url: https://example.solana-mainnet.quiknode.pro/YOUR_KEY/
-
-  # Connection settings
-  request_timeout_seconds: 15
-  max_retries: 3
-
+# ... (existing content above line 28)
+ 
 # --- API Keys Settings ---
 api_keys:
   # (HELIUS_API_KEY, BIRDEYE_API_KEY, DEFI_API_KEY, SNIPEROO_API_KEY)
   # This section is mainly a placeholder; loader prioritizes .env values.
   {} # Define as an empty mapping (dictionary)
 
-# --- Token Detection Settings ---
+# --- HTTP Client Resilience Settings ---
+http_client:
+  # Rate limiting configuration
+  rate_limit:
+    max_retries: 5
+    backoff_factor: 1.5
+    retry_statuses: [429, 502, 503, 504]
+    retry_methods: ["GET", "POST"]
+    header_prefix: "X-RateLimit-"
+  
+  # Circuit breaker configuration
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 60  # Seconds
+    half_open_attempts: 2
+  
+  # Timeout strategy
+  timeouts:
+    total: 30  # Total request timeout in seconds
+    connect: 10 # Connection establishment timeout
+  
+  # Validation settings
+  validation:
+    max_content_length: 1048576  # 1MB
+    allowed_content_types: 
+      - "application/json"
+      - "text/plain"
+
+# --- Token Detection Settings --- (existing content below)
 detection:
   enabled: true
-  target_dex: raydium_v4 # Options: raydium_v4, pumpswap, both
-  # --- DEX Program IDs (Verify these carefully!) ---
-  # Raydium Liquidity Pool v4 Program ID
-  raydium_v4_devnet_program_id: "HWy1jotH36cWeFxYHpgi8hzn7EVGKfom1ueqB9u93dAU" # Example Raydium Devnet ID
-  raydium_v4_mainnet_program_id: "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8" # Raydium Mainnet ID
-  # PumpSwap AMM Program ID (Needs Devnet Research)
-  pumpswap_devnet_program_id: null # Find and add Devnet ID if targeting PumpSwap
-  pumpswap_mainnet_program_id: null # Find and add Mainnet ID if targeting PumpSwap
-  # --- Behavior ---
-  block_processed_tokens: true # Use DB to avoid reprocessing known tokens
-  pool_creation_delay_seconds: 0 # Optional delay (seconds) after pool detected before filtering
-
-# --- Token Filtering Pipeline --- (Run in order)
-filtering:
-  enabled: true
-
-  # 1. Contract & Liquidity Checks
-  contract_liquidity:
-    enabled: true
-    min_initial_sol_liquidity: 0.1 # Min SOL paired at creation (Devnet: low, Mainnet: higher)
-    max_initial_sol_liquidity: 10.0 # Max SOL paired at creation (Avoid whales? Devnet: low)
-    check_burn_status: false # Check if LP tokens are burned (Needs reliable method/API)
-    require_renounced_mint_authority: false # Check if token mint authority is revoked
-    require_renounced_freeze_authority: false # Check if token freeze authority is revoked
-    check_lp_locks: false # Check if LP tokens are locked (Needs reliable API, e.g., Streamflow, RugCheck)
-    min_lp_lock_duration_days: 90 # Minimum lock duration if check_lp_locks is true
-
-  # 2. Metadata & Distribution Checks
-  metadata_distribution:
-    enabled: false # Often needs APIs / may slow down detection significantly
-    check_socials: false # Requires web scraping or API (e.g., Helius)
-    require_website: false
-    require_twitter: false
-    require_telegram: false
-    # Holder analysis (Needs reliable API: Helius DAS/Geyser, Birdeye)
-    enable_holder_analysis: false
-    min_holder_count: 10 # Minimum number of unique holders
-    max_creator_holding_pct: 90.0 # Max % the creator can hold
-    max_top_10_holder_pct: 70.0 # Max % the top 10 wallets hold combined
-
-  # 3. Rug-Pull / Honeypot Checks
-  rug_pull_honeypot:
-    enabled: true
-    # Basic checks (run locally)
-    check_pool_existence: true # Verify the detected pool address actually exists
-    check_trade_direction: true # Check if SOL -> Token swap seems possible (basic simulation or pool state)
-    # External API Checks (Requires API Keys configured in .env)
-    use_external_honeypot_check_api: "none" # Options: none, goplus, defi, both
-    fail_if_goplus_error: false # Stop processing token if GoPlus API call fails?
-    fail_if_defi_error: false # Stop processing token if De.Fi API call fails?
-
-  # Add more filter stages here later if needed (e.g., velocity, volume)
-
-# --- Solana Network Settings ---
-solana:
-  rpc_url: ${SOLANA_RPC_URL}
-  ws_url: ${SOLANA_WS_URL}
-  compute_units: 1_400_000
-  priority_fee: 10000
-  program_ids:
-    system: "11111111111111111111111111111111"
-    token: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-    associated_token: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-
-# --- Transaction Execution Settings ---
-execution:
-  enabled: true # Set to false to only detect and filter
-  provider: SNIPEROO_API # Options: SELF_BUILT, SNIPEROO_API, JITO_BUNDLER
-  buy_amount_sol: 0.005 # Amount of SOL to spend per buy (EXTREMELY SMALL FOR DEVNET)
-  slippage_percent: 30.0 # Slippage tolerance percentage (e.g., 30.0 for 30%)
-
-  # --- Settings for provider: SNIPEROO_API ---
-  sniperoo:
-    base_url: "https://api.sniperoo.app" # Check correct API endpoint
-    # SNIPEROO_API_KEY must be set in .env
-
-  # --- Settings for provider: JITO_BUNDLER ---
-  jito:
-    # JITO_BLOCK_ENGINE_URL and JITO_AUTH_KEYPAIR_PATH must be set in .env
-    tip_lamports: 10000 # Lamports to tip Jito validator
-
-  # --- General Transaction Settings ---
-  max_tx_retries: 2 # Number of times to retry sending a failed transaction
-  tx_confirmation_timeout_seconds: 90 # How long to wait for transaction confirmation
-  use_transaction_simulation: false # Use simulateTransaction RPC before sending (increases latency but can catch errors)
-
-# --- Position Monitoring & Auto-Sell Settings ---
-monitoring:
-  enabled: true # Set to false to only buy, not monitor/sell
-  # Note: Auto-Sell is primarily for SELF_BUILT execution. Check if SNIPEROO/JITO handle sells.
-  enable_auto_sell: true
-  poll_interval_seconds: 15 # How often to check price and P/L of open positions
-
-  # --- Basic Take Profit / Stop Loss ---
-  take_profit_pct: 100.0 # Sell when price increases by this % (e.g., 100.0 for 2x)
-  stop_loss_pct: 50.0 # Sell when price decreases by this % relative to buy price
-
-  # --- Advanced Selling Strategies (Optional) ---
-  # Trailing Stop Loss
-  enable_trailing_stop_loss: false
-  trailing_stop_loss_trigger_pct: 50.0 # Activate TSL when gain reaches this %
-  trailing_stop_loss_delta_pct: 15.0 # Sell if price drops this % from highest point after trigger
-
-  # Multi-Level Take Profit (Sell portions at different targets)
-  enable_multi_level_take_profit: false
-  # Example: Sell 50% at 100% gain, sell remaining 50% at 200% gain
-  take_profit_levels: # List of dictionaries: {pct: gain_target, amount_pct: position_size_to_sell}
-    - { pct: 100.0, amount_pct: 50.0 }
-    - { pct: 200.0, amount_pct: 50.0 }
-
-  # --- Time Stop ---
-  enable_time_stop: false # Sell position after a certain time regardless of P/L
-  time_stop_minutes: 60 # Time in minutes after buy to trigger time stop
