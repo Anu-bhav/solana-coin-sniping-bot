@@ -557,18 +557,24 @@ async def test_move_position_to_trades_success(
     # Mock the Row object for the fetchone call
     mock_pos_row = MagicMock(spec=aiosqlite.Row)
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
-
-    # Mock transaction flow
-    mock_conn.execute = AsyncMock(
-        side_effect=[
-            None,  # BEGIN
-            mock_cursor,  # SELECT
-            mock_cursor,  # INSERT
-            mock_cursor,  # DELETE
-            None,  # COMMIT
-        ]
-    )
     mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+
+    # Refactored Mocking: Mock execute calls more granularly
+    # The DatabaseManager uses `async with conn:` which handles BEGIN/COMMIT/ROLLBACK implicitly.
+    # We mock the cursor returned by conn.cursor() and its execute method.
+    # We also mock conn.commit() and conn.rollback() directly.
+
+    # Ensure connection is established before resetting mocks
+    await db_manager._get_connection()
+    mock_conn.commit.reset_mock()
+    mock_conn.rollback.reset_mock()
+    mock_conn.cursor.reset_mock()
+    mock_cursor.execute.reset_mock()
+    mock_cursor.fetchone.reset_mock()
+
+    # Configure the cursor mock for the sequence of operations
+    # The cursor is obtained once via mock_conn.cursor()
+    mock_conn.cursor.return_value = mock_cursor
 
     token = "TokenToMove"
     sell_reason = "TP"
@@ -580,15 +586,10 @@ async def test_move_position_to_trades_success(
     success = await db_manager.move_position_to_trades(
         token, sell_reason, sell_sig, sell_tokens, sell_sol, sell_price
     )
-    # Reset commit mock after connection is established and initial commit happens
-    mock_conn.commit.reset_mock()
 
     assert success is True
 
-    # Verify calls using assert_has_calls with the simplified mocking
-    # Note: We don't mock BEGIN/COMMIT/ROLLBACK explicitly anymore with execute,
-    # but rely on the connection's commit/rollback mocks being called.
-    # The cursor's execute method handles the SQL queries.
+    # Verify calls using assert_has_calls on the cursor's execute method
     expected_cursor_calls = [
         call(  # The initial SELECT call
             "SELECT * FROM positions WHERE token_mint = ? AND status = 'ACTIVE';",
@@ -618,16 +619,15 @@ async def test_move_position_to_trades_success(
         call("DELETE FROM positions WHERE id = ?;", (10,)),  # id from mock data
     ]
     # Check that the cursor execute method was called with the expected sequence
-    # Note: The cursor is obtained *within* the transaction context manager in the source code.
-    # We assert calls on the mock_cursor directly.
     mock_cursor.execute.assert_has_calls(expected_cursor_calls, any_order=False)
+    # Ensure fetchone was called after the SELECT
+    mock_cursor.fetchone.assert_called_once()
 
     # Verify commit was called on the connection (signifying successful transaction)
     mock_conn.commit.assert_called_once()
     mock_conn.rollback.assert_not_called()  # Ensure rollback wasn't called
 
-    # Verify the INSERT SQL structure specifically (optional but good practice)
-    # Find the insert call within the cursor's calls
+    # Verify the INSERT SQL structure specifically
     insert_call = next(
         c
         for c in mock_cursor.execute.call_args_list
@@ -736,10 +736,11 @@ async def test_check_if_creator_processed(
         "SELECT 1 FROM detections WHERE creator_address = ? LIMIT 1;",
         ("ExistingCreator",),
     )
-    execute_call_count = mock_cursor.execute.call_count
+    # execute_call_count variable removed as it's not needed for the revised assertion
 
     # Test case 2: Creator does not exist
     mock_conn.cursor.reset_mock()  # Reset cursor mock
+    mock_cursor.execute.reset_mock()  # Reset execute mock as well
     mock_cursor.fetchone = AsyncMock(return_value=None)
     processed = await db_manager.check_if_creator_processed("NewCreator")
     assert processed is False
@@ -747,21 +748,18 @@ async def test_check_if_creator_processed(
     mock_cursor.execute.assert_called_with(
         "SELECT 1 FROM detections WHERE creator_address = ? LIMIT 1;", ("NewCreator",)
     )
-    # Simplified assertion: Ensure execute was called correctly for the second case.
-    # The previous call count logic was prone to errors with mock resets.
 
     # Test case 3: Creator address is None or empty
-    execute_calls = []
-    mock_cursor.execute.side_effect = (
-        lambda *args: execute_calls.append(args) or mock_cursor
-    )
+    mock_conn.cursor.reset_mock()
+    mock_cursor.execute.reset_mock()
+    execute_calls = []  # Reset list for this specific test case
+    # Assign side effect *after* resetting execute mock
+    mock_cursor.execute.side_effect = lambda *args, **kwargs: execute_calls.append(args)
 
     processed = await db_manager.check_if_creator_processed(None)  # type: ignore
     assert processed is False
     processed = await db_manager.check_if_creator_processed("")
     assert processed is False
 
-    # Ensure no additional execute calls were made for None/empty strings
-    assert (
-        len(execute_calls) == 2
-    )  # Only the previous 2 calls from valid creator checks
+    # Ensure execute was *not* called for None/empty strings due to early return
+    assert len(execute_calls) == 0
