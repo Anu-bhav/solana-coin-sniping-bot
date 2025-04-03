@@ -65,15 +65,16 @@ class DatabaseManager:
 
                 # Validate position exists and is in open state
                 position = await conn.execute(
-                    """SELECT id, status FROM positions
-                    WHERE id = ? AND status = 'open'
+                    """SELECT id, status, creator_address FROM positions
+                    WHERE id = ? AND status = ?
                     FOR UPDATE""",
-                    (position_id,),
+                    (position_id, Config.OPEN_POSITION_STATUS),
                 )
                 pos_record = await position.fetchone()
+
                 if not pos_record:
                     logger.error(f"Position {position_id} not found or not open")
-                    await conn.connection.rollback()
+                    await conn.rollback()
                     return False
 
                 # Insert trade with parameterized query
@@ -90,22 +91,22 @@ class DatabaseManager:
                     ),
                 )
 
-                # Archive position instead of deleting
+                # Archive position using configured status
                 await conn.execute(
-                    """UPDATE positions SET status = 'closed'
+                    """UPDATE positions SET status = ?
                     WHERE id = ?""",
-                    (position_id,),
+                    (Config.CLOSED_POSITION_STATUS, position_id),
                 )
 
-                await conn.connection.commit()
+                await conn.commit()
                 return True
             except aiosqlite.Error as e:
                 logger.error(f"Transaction failed: {str(e)} - Position: {position_id}")
-                await conn.connection.rollback()
+                await conn.rollback()
                 return False
             except Exception as e:
                 logger.error(f"Unexpected error: {str(e)}")
-                await conn.connection.rollback()
+                await conn.rollback()
                 return False
 
     async def check_if_creator_processed(
@@ -134,14 +135,14 @@ class DatabaseManager:
                         MAX(t.timestamp) AS last_trade_at,
                         COUNT(t.id) AS total_trades,
                         COALESCE(SUM(t.amount * t.price), 0) AS total_volume
-                    FROM (
-                        SELECT ? AS creator_address,
-                            EXISTS(SELECT 1 FROM processed_creators WHERE creator_address = ?) AS processed,
-                            (SELECT processed_at FROM processed_creators WHERE creator_address = ?) AS processed_at
-                    ) pc
-                    LEFT JOIN trades t USING(creator_address)
-                    GROUP BY pc.creator_address""",
-                    (creator_address, creator_address, creator_address),
+                    FROM processed_creators pc
+                    LEFT JOIN trades t
+                        ON pc.creator_address = t.creator_address
+                        AND t.timestamp > ?  -- Configurable cutoff
+                    WHERE pc.creator_address = ?
+                    GROUP BY pc.creator_address
+                    /*+ INDEX(pc processed_creators_address_idx) */""",
+                    (Config.CREATOR_CUTOFF_TIMESTAMP, creator_address),
                 )
                 row = await result.fetchone()
                 return dict(row) if row else None
@@ -150,17 +151,19 @@ class DatabaseManager:
                 return None
 
     @classmethod
-    async def create_pool(cls) -> aiosqlite.Connection:
+    async def create_pool(cls) -> None:
         """Initialize connection pool from environment configuration."""
-        return await aiosqlite.connect(
+        cls._connection_pool = await aiosqlite.connect(
             database=Config.DATABASE_URL,
             timeout=Config.DB_TIMEOUT,
-            check_same_thread=False,
+            check_same_thread=Config.DB_CHECK_SAME_THREAD,
             pool_size=Config.DB_POOL_SIZE,
-            isolation_level="IMMEDIATE",
-            journal_mode="WAL",
+            isolation_level=Config.DB_ISOLATION_LEVEL,
+            journal_mode=Config.DB_JOURNAL_MODE,
             cached_statements=Config.DB_STATEMENT_CACHE_SIZE,
+            detect_types=Config.DB_DETECT_TYPES,
         )
+        cls._connection_pool.row_factory = aiosqlite.Row
 
     async def close(self):
         """Close all database connections."""
