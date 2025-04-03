@@ -49,7 +49,7 @@ http_client:
 # Token Configuration
 tokens:
   watchlist:
-    - mint: ${TOKEN1_MINT}          # Primary token mint address
+    - mint: ${TOKEN1_MINT}  # Primary token mint address
       min_liquidity: 500            # SOL liquidity threshold
       max_slippage: 1.5             # Percentage
     - mint: ${TOKEN2_MINT}          # Secondary token mint address  
