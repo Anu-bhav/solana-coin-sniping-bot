@@ -1,4 +1,6 @@
+---
 # Core Solana Configuration
+---
 solana:
   networks:
     mainnet:
