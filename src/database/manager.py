@@ -1,180 +1,137 @@
-import aiosqlite
-import logging
-import os
-from typing import Optional, Dict, Any
-from contextlib import asynccontextmanager
-from config import Config
-
-logger = logging.getLogger(__name__)
+import asyncpg
+from typing import Optional, List, Dict
+from datetime import datetime
 
 
 class DatabaseManager:
-    """Managed database connections with connection pooling and atomic transactions."""
+    """Manages database connections and operations for the sniping bot"""
 
-    def __init__(self):
-        self.db_path: str = Config.DATABASE_URL
-        self.pool_size: int = Config.DB_POOL_SIZE
-        self._connection_pool = None
+    def __init__(self, dsn: str):
+        self.dsn = dsn
+        self.pool: Optional[asyncpg.pool.Pool] = None
 
-    @asynccontextmanager
-    async def _get_connection(self) -> aiosqlite.Connection:
-        """Get async connection from pool with transaction isolation."""
-        if not self._connection_pool:
-            self._connection_pool = await aiosqlite.connect(
-                database=self.db_path,
-                timeout=Config.DB_TIMEOUT,
-                check_same_thread=False,
-                pool_size=Config.DB_POOL_SIZE,
-                isolation_level="IMMEDIATE",
-            )
-            self._connection_pool.row_factory = aiosqlite.Row
-
-        async with self._connection_pool.cursor() as cursor:
-            try:
-                await cursor.execute("PRAGMA foreign_keys = ON")
-                yield cursor
-            finally:
-                await cursor.close()
-
-    async def move_position_to_trades(
-        self, position_id: str, trade_data: Dict[str, Any]
-    ) -> bool:
-        """
-        Atomically move a position to trades table with transaction rollback.
-
-        Args:
-            position_id: Unique identifier for the position
-            trade_data: Dictionary containing:
-                - amount: float
-                - price: float
-                - timestamp: int
-
-        Returns:
-            bool: True if successful, False on failure
-        """
-        required_fields = {"amount", "price", "timestamp"}
-        if not required_fields.issubset(trade_data):
-            logger.error(
-                f"Missing required trade fields: {required_fields - trade_data.keys()}"
-            )
-            return False
-
-        async with self._get_connection() as conn:
-            try:
-                await conn.execute("BEGIN IMMEDIATE")
-
-                # Validate position exists and is in open state
-                position = await conn.execute(
-                    """SELECT id, status, creator_address FROM positions
-                    WHERE id = ? AND status = ?
-                    FOR UPDATE""",
-                    (position_id, Config.OPEN_POSITION_STATUS),
-                )
-                pos_record = await position.fetchone()
-
-                if not pos_record:
-                    logger.error(f"Position {position_id} not found or not open")
-                    await conn.rollback()
-                    return False
-
-                # Insert trade with parameterized query
-                await conn.execute(
-                    """INSERT INTO trades
-                    (position_id, amount, price, timestamp, creator_address)
-                    VALUES (?, ?, ?, ?, ?)""",
-                    (
-                        position_id,
-                        trade_data["amount"],
-                        trade_data["price"],
-                        trade_data["timestamp"],
-                        pos_record["creator_address"],
-                    ),
-                )
-
-                # Archive position using configured status
-                await conn.execute(
-                    """UPDATE positions SET status = ?
-                    WHERE id = ?""",
-                    (Config.CLOSED_POSITION_STATUS, position_id),
-                )
-
-                await conn.commit()
-                return True
-            except aiosqlite.Error as e:
-                logger.error(f"Transaction failed: {str(e)} - Position: {position_id}")
-                await conn.rollback()
-                return False
-            except Exception as e:
-                logger.error(f"Unexpected error: {str(e)}")
-                await conn.rollback()
-                return False
-
-    async def check_if_creator_processed(
-        self, creator_address: str
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Check creator processing status with trade metadata.
-
-        Args:
-            creator_address: Base58 encoded Solana address
-
-        Returns:
-            Dictionary containing:
-            - processed: bool
-            - first_processed_at: Optional[int]
-            - last_trade_at: Optional[int]
-            - total_trades: int
-            - total_volume: float
-        """
-        async with self._get_connection() as conn:
-            try:
-                result = await conn.execute(
-                    """SELECT
-                        pc.processed,
-                        pc.processed_at AS first_processed_at,
-                        MAX(t.timestamp) AS last_trade_at,
-                        COUNT(t.id) AS total_trades,
-                        COALESCE(SUM(t.amount * t.price), 0) AS total_volume
-                    FROM processed_creators pc
-                    LEFT JOIN trades t
-                        ON pc.creator_address = t.creator_address
-                        AND t.timestamp > ?  -- Configurable cutoff
-                    WHERE pc.creator_address = ?
-                    GROUP BY pc.creator_address
-                    /*+ INDEX(pc processed_creators_address_idx) */""",
-                    (Config.CREATOR_CUTOFF_TIMESTAMP, creator_address),
-                )
-                row = await result.fetchone()
-                return dict(row) if row else None
-            except aiosqlite.Error as e:
-                logger.error(f"Creator check failed: {str(e)}")
-                return None
-
-    @classmethod
-    async def create_pool(cls) -> None:
-        """Initialize connection pool from environment configuration."""
-        cls._connection_pool = await aiosqlite.connect(
-            database=Config.DATABASE_URL,
-            timeout=Config.DB_TIMEOUT,
-            check_same_thread=Config.DB_CHECK_SAME_THREAD,
-            pool_size=Config.DB_POOL_SIZE,
-            isolation_level=Config.DB_ISOLATION_LEVEL,
-            journal_mode=Config.DB_JOURNAL_MODE,
-            cached_statements=Config.DB_STATEMENT_CACHE_SIZE,
-            detect_types=Config.DB_DETECT_TYPES,
+    async def connect(self):
+        """Initialize connection pool"""
+        self.pool = await asyncpg.create_pool(
+            dsn=self.dsn, min_size=2, max_size=10, command_timeout=60
         )
-        cls._connection_pool.row_factory = aiosqlite.Row
 
     async def close(self):
-        """Close all database connections."""
-        if self._connection_pool:
-            await self._connection_pool.close()
-            self._connection_pool = None
+        """Cleanup connection pool"""
+        if self.pool:
+            await self.pool.close()
 
+    # CRUD Operations
+    async def add_detection(
+        self,
+        token_mint: str,
+        lp_address: str,
+        base_mint: str,
+        creator_address: Optional[str] = None,
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO detections (token_mint, lp_address, base_mint, creator_address)
+                    VALUES ($1, $2, $3, $4)
+                """,
+                    token_mint,
+                    lp_address,
+                    base_mint,
+                    creator_address,
+                )
 
-# Configuration validation
-if not all([Config.DATABASE_URL, Config.DB_POOL_SIZE]):
-    raise EnvironmentError(
-        "Missing required database configuration values. "
-        "Set DATABASE_URL and DB_POOL_SIZE in environment."
-    )
+    async def update_detection_status(
+        self, token_mint: str, status: str, filter_fail_reason: Optional[str] = None
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    UPDATE detections 
+                    SET status = $1, filter_fail_reason = $2
+                    WHERE token_mint = $3
+                """,
+                    status,
+                    filter_fail_reason,
+                    token_mint,
+                )
+
+    async def add_position(
+        self,
+        token_mint: str,
+        lp_address: str,
+        buy_amount_sol: float,
+        buy_amount_tokens: float,
+        buy_price: float,
+        buy_tx_signature: str,
+        buy_provider_identifier: str,
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """
+                    INSERT INTO positions (token_mint, lp_address, buy_amount_sol, 
+                                        buy_amount_tokens, buy_price, buy_tx_signature,
+                                        buy_provider_identifier)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT(token_mint) DO UPDATE SET
+                        lp_address = excluded.lp_address,
+                        buy_amount_sol = excluded.buy_amount_sol,
+                        buy_amount_tokens = excluded.buy_amount_tokens,
+                        buy_price = excluded.buy_price,
+                        buy_tx_signature = excluded.buy_tx_signature,
+                        buy_provider_identifier = excluded.buy_provider_identifier,
+                        last_updated = CURRENT_TIMESTAMP
+                """,
+                    token_mint,
+                    lp_address,
+                    buy_amount_sol,
+                    buy_amount_tokens,
+                    buy_price,
+                    buy_tx_signature,
+                    buy_provider_identifier,
+                )
+
+    async def get_active_position(self, token_mint: str) -> Optional[Dict]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT * FROM positions 
+                WHERE token_mint = $1 AND status = 'ACTIVE'
+            """,
+                token_mint,
+            )
+            return dict(row) if row else None
+
+    async def get_all_active_positions(self) -> List[Dict]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM positions 
+                WHERE status = 'ACTIVE'
+                ORDER BY buy_timestamp DESC
+            """
+            )
+            return [dict(row) for row in rows]
+
+    async def check_if_token_processed(self, token_mint: str) -> bool:
+        async with self.pool.acquire() as conn:
+            result = await conn.fetchval(
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM detections
+                    WHERE token_mint = $1 
+                    AND status IN ('PASSED_FILTER', 'FAILED_FILTER', 'BUY_PENDING', 'BUY_FAILED')
+                    
+                    UNION ALL
+                    
+                    SELECT 1 FROM positions
+                    WHERE token_mint = $1 
+                    AND status IN ('ACTIVE', 'SELL_PENDING', 'SELL_FAILED')
+                )
+            """,
+                token_mint,
+            )
+            return bool(result)
