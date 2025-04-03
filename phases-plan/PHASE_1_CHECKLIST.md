@@ -9,8 +9,8 @@
 *   [ ] Implement `__init__` loading DB path from config.
 *   [ ] Implement `async initialize_db()` creating tables from schema.
     *   [ ] **Testing:** Unit test `initialize_db` (mock `aiosqlite`, check connection, check execute script called).
-*   [ ] Implement `async add_detection(...)`.
-    *   [ ] **Testing:** Unit test adding a new detection record.
+*   [x] Implement `async add_detection(...)`.
+    *   [x] **Testing:** Unit test adding a new detection record.
 *   [ ] Implement `async update_detection_status(...)`.
     *   [ ] **Testing:** Unit test updating status/reason for an existing detection.
 *   [ ] Implement `async add_position(...)` (preferably using UPSERT).
