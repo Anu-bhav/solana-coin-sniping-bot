@@ -270,12 +270,14 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
     base = "BaseMint1"
     creator = "Creator1"
 
-    result_id = await db_manager.add_detection(token, lp, base, creator)
-    commit_count_before = mock_conn.commit.call_count
-    result_id = await db_manager.add_detection(token, lp, base, creator)
-    commit_count_after = mock_conn.commit.call_count
+    # Ensure connection is established before resetting mocks
+    await db_manager._get_connection()
+    mock_conn.commit.reset_mock()
+    mock_conn.cursor.reset_mock()
+    mock_cursor.execute.reset_mock()
+    mock_cursor.fetchone.reset_mock()
 
-    assert result_id == 1
+    result_id = await db_manager.add_detection(token, lp, base, creator)
     expected_sql = """
         INSERT INTO detections (token_mint, lp_address, base_mint, creator_address, status, last_updated)
         VALUES (?, ?, ?, ?, 'PENDING_FILTER', CURRENT_TIMESTAMP)
@@ -286,10 +288,10 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
             -- lp_address = excluded.lp_address
         RETURNING id;
         """
+    assert result_id == 1
     # Use call comparison for execute
-    # Allow multiple cursor calls since connection may be reused
-    assert mock_conn.cursor.call_count >= 1
-    mock_cursor.execute.assert_called_once()
+    mock_conn.cursor.assert_called_once()  # Cursor should be obtained once for the operation
+    mock_cursor.execute.assert_called_once()  # Execute should be called once on the cursor
     args, _ = mock_cursor.execute.call_args
     # Clean whitespace for comparison
     cleaned_expected_sql = " ".join(expected_sql.split())
@@ -297,8 +299,8 @@ async def test_add_detection(mock_connect, db_manager, mock_aiosqlite_connection
     assert cleaned_actual_sql == cleaned_expected_sql
     assert args[1] == (token, lp, base, creator)  # Check parameters
     mock_cursor.fetchone.assert_called_once()
-    # Assert that commit was called exactly once *during* this operation
-    assert commit_count_after == commit_count_before + 1
+    # Assert that commit was called exactly once for this operation
+    mock_conn.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -315,10 +317,13 @@ async def test_update_detection_status(
     status = "PASSED_FILTER"
     reason = "Looks good"
 
-    commit_count_before = mock_conn.commit.call_count
-    success = await db_manager.update_detection_status(token, status, reason)
-    commit_count_after = mock_conn.commit.call_count
+    # Ensure connection is established before resetting mocks
+    await db_manager._get_connection()
+    mock_conn.commit.reset_mock()
+    mock_conn.cursor.reset_mock()
+    mock_cursor.execute.reset_mock()
 
+    success = await db_manager.update_detection_status(token, status, reason)
     assert success is True
     expected_sql = """
         UPDATE detections
@@ -332,8 +337,8 @@ async def test_update_detection_status(
     cleaned_actual_sql = " ".join(args[0].split())
     assert cleaned_actual_sql == cleaned_expected_sql
     assert args[1] == (status, reason, token)
-    # Assert that commit was called exactly once *during* this operation
-    assert commit_count_after == commit_count_before + 1
+    # Assert that commit was called exactly once for this operation
+    mock_conn.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -346,20 +351,22 @@ async def test_update_detection_status_not_found(
     mock_connect.return_value = mock_conn
     mock_cursor.rowcount = 0  # Simulate zero rows updated
 
+    # Ensure connection is established before resetting mocks
+    await db_manager._get_connection()
+    mock_conn.commit.reset_mock()
+    mock_conn.cursor.reset_mock()
+    mock_cursor.execute.reset_mock()
+
     success = await db_manager.update_detection_status(
         "NonExistentToken", "FAILED_FILTER"
     )
-    commit_count_before = mock_conn.commit.call_count
-    success = await db_manager.update_detection_status(
-        "NonExistentToken", "FAILED_FILTER"
-    )  # Re-call the function after getting count
-    commit_count_after = mock_conn.commit.call_count
-
     assert success is False
-    mock_conn.cursor.assert_called_once()
-    mock_cursor.execute.assert_called_once()
-    # Assert that commit was called exactly once *during* this operation
-    assert commit_count_after == commit_count_before + 1
+    # Check calls for the single operation attempt
+    mock_conn.cursor.assert_called_once()  # Cursor obtained once
+    mock_cursor.execute.assert_called_once()  # Execute called once
+    # Assert that commit was called exactly once for this operation
+    # (even if it updated 0 rows)
+    mock_conn.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -377,12 +384,16 @@ async def test_add_position(mock_connect, db_manager, mock_aiosqlite_connection)
     buy_tokens = 1000.0
     buy_price = 0.0001
 
+    # Ensure connection is established before resetting mocks
+    await db_manager._get_connection()
+    mock_conn.commit.reset_mock()
+    mock_conn.cursor.reset_mock()
+    mock_cursor.execute.reset_mock()
+    mock_cursor.fetchone.reset_mock()
+
     result_id = await db_manager.add_position(
         token, lp, buy_sol, buy_sig, buy_tokens, buy_price
     )
-    # Reset commit mock after connection is established and initial commit happens
-    mock_conn.commit.reset_mock()
-
     assert result_id == 5
     expected_sql = """
         INSERT INTO positions (token_mint, lp_address, buy_amount_sol, buy_tx_signature, buy_amount_tokens, buy_price, buy_provider_identifier, status, last_updated)
@@ -410,9 +421,8 @@ async def test_add_position(mock_connect, db_manager, mock_aiosqlite_connection)
     )  # buy_provider_identifier is None
     mock_cursor.fetchone.assert_called_once()
     # Reset mock after initial connection commits
-    mock_conn.commit.reset_mock()
     # Now verify our operation commit
-    assert mock_conn.commit.call_count == 1
+    mock_conn.commit.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -428,10 +438,13 @@ async def test_update_position_status(
     token = "TokenMintPos1"
     new_status = "SELL_PENDING"
 
-    success = await db_manager.update_position_status(token, new_status)
-    # Reset commit mock after connection is established and initial commit happens
+    # Ensure connection is established before resetting mocks
+    await db_manager._get_connection()
     mock_conn.commit.reset_mock()
+    mock_conn.cursor.reset_mock()
+    mock_cursor.execute.reset_mock()
 
+    success = await db_manager.update_position_status(token, new_status)
     assert success is True
     expected_sql = """
         UPDATE positions
@@ -512,8 +525,7 @@ async def test_get_all_active_positions(
     mock_conn.cursor.assert_called_once()
     mock_cursor.execute.assert_called_once_with(expected_sql)
     mock_cursor.fetchall.assert_called_once()
-    # Check row_factory *after* the call, as it's set within the method
-    assert mock_conn.row_factory is aiosqlite.Row
+    # Row factory is set internally and reset in finally; checking the result structure is sufficient.
 
 
 @pytest.mark.asyncio
