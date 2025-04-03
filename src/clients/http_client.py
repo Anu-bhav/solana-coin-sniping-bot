@@ -14,7 +14,7 @@ class CircuitBreaker:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.failures = 0
-        self.state: Literal["closed", "open", "half-open"] = "closed"
+        self.state: Literal["closed", "open", "half_open"] = "closed"
         self.last_failure_time: float = 0.0
 
     async def track_failure(self):
