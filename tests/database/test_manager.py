@@ -557,22 +557,16 @@ async def test_move_position_to_trades_success(
     mock_pos_row = MagicMock(spec=aiosqlite.Row)
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
 
-    # Variable to capture the cursor created for the SELECT statement
-    captured_select_cursor = None
-
     # Define the side effect function for execute
-    # This function will now create and configure the cursor mock for SELECT on the fly
     async def execute_side_effect(sql, params=None):
-        nonlocal captured_select_cursor  # Allow modification of the outer variable
         if "BEGIN TRANSACTION" in sql:
             return None
         elif "SELECT * FROM positions" in sql:
-            # Create and configure the cursor specifically for this SELECT call
-            cursor_mock = AsyncMock(spec=aiosqlite.Cursor)
-            cursor_mock.fetchone = AsyncMock(return_value=mock_pos_row)
-            cursor_mock.close = AsyncMock()
-            captured_select_cursor = cursor_mock  # Capture the created cursor
-            return cursor_mock
+            # Create and configure cursor for SELECT
+            select_cursor = AsyncMock(spec=aiosqlite.Cursor)
+            select_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+            select_cursor.close = AsyncMock()
+            return select_cursor
         elif "INSERT INTO trades" in sql:
             return AsyncMock(spec=aiosqlite.Cursor)  # Generic cursor for INSERT
         elif "DELETE FROM positions" in sql:
@@ -649,10 +643,14 @@ async def test_move_position_to_trades_success(
     ]
     assert actual_execute_calls == expected_conn_execute_calls
 
-    # Ensure fetchone and close were called on the SELECT cursor
-    assert captured_select_cursor is not None  # Ensure cursor was captured
-    captured_select_cursor.fetchone.assert_called_once()
-    captured_select_cursor.close.assert_called_once()
+    # Verify fetchone and close were called on the SELECT cursor
+    select_cursor = next(
+        c
+        for c in mock_conn.execute.mock_calls
+        if "SELECT * FROM positions" in str(c.args)
+    ).return_value
+    select_cursor.fetchone.assert_called_once()
+    select_cursor.close.assert_called_once()
 
     # Verify commit was called directly on the connection and rollback wasn't
     mock_conn.commit.assert_called_once()
