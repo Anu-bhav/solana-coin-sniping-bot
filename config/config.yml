@@ -30,9 +30,28 @@ http_client:
   # Validation settings
   validation:
     max_content_length: 1048576  # 1MB
-    allowed_content_types: 
+    allowed_content_types:
       - "application/json"
       - "text/plain"
+
+# --- Solana Transaction Settings ---
+solana:
+  rpc_endpoints:
+    main: "https://mainnet.example/rpc"
+    fallback: "https://fallback.example/rpc"
+  ws_endpoint: "wss://mainnet.example/ws"
+  commitment: "confirmed"
+  compute_budget:
+    units: 200000
+    priority_micro_lamps: 10000
+  transaction:
+    max_retries: 5
+    retry_delay: 0.5  # Seconds
+    timeout: 30  # Seconds
+  simulation:
+    enabled: true
+    max_lamport_loss: 100000  # 0.00001 SOL
+    allow_unpaid_rpc: false
 
 # --- Token Detection Settings --- (existing content below)
 detection:
