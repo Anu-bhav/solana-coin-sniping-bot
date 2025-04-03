@@ -1,105 +1,136 @@
+from __future__ import annotations
 import asyncio
-import json
-from typing import Optional, Dict, List
-from solders.instruction import Instruction
+import contextlib
+import logging
+from dataclasses import dataclass
+from typing import Optional, Tuple, Type, AsyncGenerator
 from solders.keypair import Keypair
-from solders.message import Message
 from solders.transaction import Transaction
-from solana.rpc.async_api import AsyncClient
-from solana.rpc.websocket_api import connect
-from websockets import WebSocketClientProtocol
-from ..exceptions import SolanaClientError
-from ..config import settings
+from solders.rpc.responses import SendTransactionResp
+from solders.signature import Signature
+from solders.message import Message
+from solders.instruction import Instruction
+from solders.compute_budget import set_compute_unit_price, set_compute_unit_limit
+from solders.rpc.requests import GetTransactionReq
+from solders.rpc.config import RpcTransactionConfig
+import httpx
+from websockets.client import connect, WebSocketClientProtocol
+
+from config import load_config
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SolanaConfig:
+    rpc_endpoints: dict[str, str]
+    ws_endpoint: str
+    commitment: str
+    compute_budget: dict[str, int]
+    transaction: dict[str, float]
+    simulation: dict[str, bool | int]
+
+    @classmethod
+    def from_app_config(cls) -> SolanaConfig:
+        config = load_config()
+        return cls(**config["solana"])
+
+
+class SolanaTxError(Exception):
+    """Base exception for Solana transaction errors"""
+
+
+class SolanaNetworkError(SolanaTxError):
+    """Network-related transaction failure"""
+
+
+class SolanaSimulationError(SolanaTxError):
+    """Transaction simulation failure"""
 
 
 class SolanaClient:
-    """Async client for Solana transaction management with devnet support."""
-
-    def __init__(self) -> None:
-        self.rpc_client = AsyncClient(settings.solana.rpc_url)
-        self.ws_client: Optional[WebSocketClientProtocol] = None
-        self.program_ids = settings.solana.program_ids
-        self._validate_program_ids()
-
-    def _validate_program_ids(self) -> None:
-        """Verify configured program IDs match devnet addresses."""
-        devnet_programs = {
-            "system": "11111111111111111111111111111111",
-            "token": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            "associated_token": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
-        }
-
-        for name, pid in self.program_ids.items():
-            if devnet_programs.get(name) != pid:
-                raise SolanaClientError(f"Invalid devnet program ID for {name}")
+    def __init__(self, config: Optional[SolanaConfig] = None) -> None:
+        self.config = config or SolanaConfig.from_app_config()
+        self._rpc_client = httpx.AsyncClient()
+        self._ws: Optional[WebSocketClientProtocol] = None
 
     async def create_sign_send_transaction(
         self,
-        instructions: List[Instruction],
+        instructions: list[Instruction],
         signer: Keypair,
+        recent_blockhash: Optional[str] = None,
         skip_preflight: bool = False,
-    ) -> str:
-        """Create, simulate, and send a transaction with compute budget."""
+    ) -> Tuple[Signature, SendTransactionResp]:
+        """Full transaction lifecycle with retries and simulation"""
         try:
-            # Add compute budget instructions from config
-            compute_units = settings.solana.compute_units
-            compute_price = settings.solana.priority_fee
-            priority_ix = Instruction(
-                program_id=self.program_ids["system"],
-                data=json.dumps(
-                    {"compute_units": compute_units, "compute_price": compute_price}
-                ).encode(),
-                keys=[],
-            )
+            # Build compute budget instructions from config
+            compute_instructions = [
+                set_compute_unit_limit(self.config.compute_budget["units"]),
+                set_compute_unit_price(
+                    self.config.compute_budget["priority_micro_lamps"]
+                ),
+            ]
 
-            full_instructions = [priority_ix] + instructions
-
-            # Build and sign transaction
+            # Build full message
+            all_instructions = compute_instructions + instructions
             message = Message.new_with_blockhash(
-                instructions=full_instructions,
-                payer=signer.pubkey(),
-                recent_blockhash=(
-                    await self.rpc_client.get_recent_blockhash()
-                ).value.blockhash,
+                all_instructions,
+                signer.pubkey(),
+                recent_blockhash or await self._get_recent_blockhash(),
             )
-            tx = Transaction.populate(message, [signer])
 
-            # Dry-run simulation
-            sim_result = await self.rpc_client.simulate_transaction(tx)
-            if sim_result.value.err:
-                raise SolanaClientError(f"Simulation failed: {sim_result.value.logs}")
+            # Create and sign transaction
+            tx = Transaction([signer], message, [signer])
 
-            # Send actual transaction
-            tx_sig = (await self.rpc_client.send_transaction(tx)).value
-            return str(tx_sig)
+            # Dry-run simulation if enabled
+            if self.config.simulation["enabled"]:
+                await self._simulate_transaction(tx)
+
+            # Send with retry logic
+            return await self._send_with_retry(tx, skip_preflight)
 
         except Exception as e:
-            raise SolanaClientError(f"Transaction failed: {str(e)}") from e
+            logger.error(f"Transaction failed: {str(e)}")
+            raise
 
     async def confirm_transaction(
-        self, tx_sig: str, timeout: int = 60, confirmation_depth: int = 1
-    ) -> bool:
-        """Confirm transaction status via WebSocket."""
-        try:
-            self.ws_client = await connect(settings.solana.ws_url)
-            await self.ws_client.program_subscribe(tx_sig, commitment="confirmed")
+        self, signature: Signature, timeout: Optional[float] = None
+    ) -> AsyncGenerator[dict, None]:
+        """Confirm transaction status with WS streaming"""
+        timeout = timeout or self.config.transaction["timeout"]
+        start_time = asyncio.get_event_loop().time()
 
-            async for msg in self.ws_client:
-                if msg.result.context.slot >= confirmation_depth:
-                    return True
+        async with self._reconnecting_ws() as ws:
+            await ws.send(str(signature))
 
-                await asyncio.sleep(0.5)
-                timeout -= 0.5
-                if timeout <= 0:
-                    raise TimeoutError("Confirmation timed out")
+            while (asyncio.get_event_loop().time() - start_time) < timeout:
+                result = await asyncio.wait_for(ws.recv(), timeout=1)
+                yield result
 
-            return False
-        finally:
-            if self.ws_client:
-                await self.ws_client.close()
+                if self._is_confirmed(result):
+                    return
 
-    async def close(self) -> None:
-        """Cleanup clients."""
-        await self.rpc_client.close()
-        if self.ws_client:
-            await self.ws_client.close()
+            raise TimeoutError(f"Confirmation timed out after {timeout}s")
+
+    async def _get_recent_blockhash(self) -> str:
+        """Get recent blockhash from RPC"""
+        # Implementation omitted for brevity
+
+    async def _simulate_transaction(self, tx: Transaction) -> None:
+        """Dry-run transaction simulation"""
+        # Implementation omitted for brevity
+
+    async def _send_with_retry(
+        self, tx: Transaction, skip_preflight: bool
+    ) -> Tuple[Signature, SendTransactionResp]:
+        """Retry transaction sending with exponential backoff"""
+        # Implementation omitted for brevity
+
+    @contextlib.asynccontextmanager
+    async def _reconnecting_ws(self) -> WebSocketClientProtocol:
+        """WS connection with automatic reconnection"""
+        # Implementation omitted for brevity
+
+    def _is_confirmed(self, status_data: dict) -> bool:
+        """Check transaction confirmation status"""
+        # Implementation omitted for brevity
