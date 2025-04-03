@@ -2,10 +2,9 @@
 
 import aiosqlite
 import logging
-import os
 import asyncio  # Added for sleep in retry
 from pathlib import Path
-from typing import Optional, List, Tuple, Any
+from typing import Optional, List
 
 # Assuming AppConfig is defined in src.core.models and includes database settings
 from src.core.models import AppConfig
