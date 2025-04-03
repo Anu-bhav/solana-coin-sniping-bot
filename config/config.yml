@@ -6,10 +6,16 @@ solana:
       ws_url: ${WS_MAINNET_URL}     # Env var required
       commitment: confirmed         # confirmed|finalized|processed
     devnet:
-      rpc_url: ${RPC_DEVNET_URL}    # Env var required
-      ws_url: ${WS_DEVNET_URL}      # Env var required
+      rpc_url: ${DEVNET_HTTP_URL}     # Primary RPC endpoint
+      ws_url: ${DEVNET_WSS_URL}       # Websocket endpoint
+      alternative_rpc: ${HELIUS_DEVNET_HTTP_URL}  # Fallback endpoint
       commitment: processed
 
+# API Provider Configuration
+api_keys:
+  helius: ${HELIUS_API_KEY}          # Required for priority RPC access
+  birdeye: ${BIRDEYE_API_KEY}        # Token analytics platform API key
+  jito: ${JITO_API_KEY}              # Optional MEV protection service
 # Wallet Configuration
 wallet:
   keyfile: ${WALLET_KEYFILE}        # Path to keypair file
