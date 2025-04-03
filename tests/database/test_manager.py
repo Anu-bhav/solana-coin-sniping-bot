@@ -556,32 +556,46 @@ async def test_move_position_to_trades_success(
     # Mock the Row object for the fetchone call
     mock_pos_row = MagicMock(spec=aiosqlite.Row)
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
-    # Configure the mock cursor that conn.execute will return for the SELECT
-    mock_select_cursor = AsyncMock(spec=aiosqlite.Cursor)
-    mock_select_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
-    mock_select_cursor.close = AsyncMock()
+
+    # Variable to capture the cursor created for the SELECT statement
+    captured_select_cursor = None
+
+    # Define the side effect function for execute
+    # This function will now create and configure the cursor mock for SELECT on the fly
+    async def execute_side_effect(sql, params=None):
+        nonlocal captured_select_cursor  # Allow modification of the outer variable
+        if "BEGIN TRANSACTION" in sql:
+            return None
+        elif "SELECT * FROM positions" in sql:
+            # Create and configure the cursor specifically for this SELECT call
+            cursor_mock = AsyncMock(spec=aiosqlite.Cursor)
+            cursor_mock.fetchone = AsyncMock(return_value=mock_pos_row)
+            cursor_mock.close = AsyncMock()
+            captured_select_cursor = cursor_mock  # Capture the created cursor
+            return cursor_mock
+        elif "INSERT INTO trades" in sql:
+            return AsyncMock(spec=aiosqlite.Cursor)  # Generic cursor for INSERT
+        elif "DELETE FROM positions" in sql:
+            return AsyncMock(spec=aiosqlite.Cursor)  # Generic cursor for DELETE
+        elif "PRAGMA journal_mode=WAL" in sql:
+            return AsyncMock(spec=aiosqlite.Cursor)  # Generic cursor for PRAGMA
+        elif "ROLLBACK" in sql:
+            return None  # ROLLBACK doesn't return a cursor
+        else:
+            # COMMIT is called directly on mock_conn, not via execute
+            raise ValueError(f"Unexpected SQL in mock_conn.execute: {sql}")
 
     # Ensure connection is established before resetting mocks
     await db_manager._get_connection()
 
-    # Reset mocks before the test execution
+    # Reset mocks needed for assertion
     mock_conn.commit.reset_mock()
     mock_conn.rollback.reset_mock()
     mock_conn.execute.reset_mock()
-    mock_select_cursor.fetchone.reset_mock()
-    mock_select_cursor.close.reset_mock()
+    # No need to reset mock_select_cursor as it's created within side_effect
 
-    # Configure execute side effect as a list for the transaction flow
-    # Note: PRAGMA is handled during initial connection setup, before reset
-    mock_conn.execute.side_effect = [
-        None,  # BEGIN TRANSACTION
-        mock_select_cursor,  # SELECT positions
-        AsyncMock(spec=aiosqlite.Cursor),  # INSERT trades
-        AsyncMock(spec=aiosqlite.Cursor),  # DELETE positions
-        # COMMIT is called directly on mock_conn, not via execute
-    ]
-    # Ensure fetchone is configured correctly AFTER reset
-    mock_select_cursor.fetchone.return_value = mock_pos_row
+    # Apply the side effect function AFTER resetting execute
+    mock_conn.execute.side_effect = execute_side_effect
 
     token = "TokenToMove"
     sell_reason = "TP"
@@ -636,8 +650,9 @@ async def test_move_position_to_trades_success(
     assert actual_execute_calls == expected_conn_execute_calls
 
     # Ensure fetchone and close were called on the SELECT cursor
-    mock_select_cursor.fetchone.assert_called_once()
-    mock_select_cursor.close.assert_called_once()
+    assert captured_select_cursor is not None  # Ensure cursor was captured
+    captured_select_cursor.fetchone.assert_called_once()
+    captured_select_cursor.close.assert_called_once()
 
     # Verify commit was called directly on the connection and rollback wasn't
     mock_conn.commit.assert_called_once()
