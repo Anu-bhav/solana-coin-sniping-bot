@@ -51,7 +51,7 @@ tokens:
     - mint: ${TOKEN1_MINT}  # Primary token mint address
       min_liquidity: 500            # SOL liquidity threshold
       max_slippage: 1.5             # Percentage
-    - mint: ${TOKEN2_MINT}          # Secondary token mint address  
+    - mint: ${TOKEN2_MINT}  # Secondary token mint address
       min_liquidity: 200
       max_slippage: 2.0
 
