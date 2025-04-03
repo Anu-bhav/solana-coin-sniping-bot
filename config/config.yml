@@ -64,7 +64,10 @@ logging:
     interval: 60                    # Seconds between reports
 
 # Validation Comments
-# 1. Commitment level affects confirmation speed vs finality
-# 2. Priority fee 'auto' uses recent market rates
-# 3. Token liquidity thresholds prevent sniping illiquid pools
-# 4. HTTP retry policy handles Solana RPC instability
+# Environment Configuration Notes:
+# 1. All ${VARS} must be set in .env.dev
+# 2. DEVNET_HTTP_URL should point to reliable RPC provider
+# 3. HELIUS_API_KEY required for advanced RPC features
+# 4. DEV_WALLET_PRIVATE_KEY must be base58 encoded
+# 5. Commitment levels: confirmed < finalized < processed (speed vs finality)
+# 6. HTTP retry policy handles Solana RPC instability
