@@ -78,4 +78,4 @@
 
 *   [ ] All items above checked.
 *   [ ] All implemented code is unit tested.
-*   [ ] Phase 1 deliverables are ready and committed to Git.
+*   [x] Phase 1 deliverables are ready and committed to Git.
