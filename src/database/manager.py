@@ -16,21 +16,25 @@ class DatabaseManager:
         self.pool_size: int = Config.DB_POOL_SIZE
         self._connection_pool = None
 
+    @asynccontextmanager
+    async def _get_connection(self) -> aiosqlite.Connection:
+        """Get async connection from pool with transaction isolation."""
+        if not self._connection_pool:
+            self._connection_pool = await aiosqlite.connect(
+                database=self.db_path,
+                timeout=Config.DB_TIMEOUT,
+                check_same_thread=False,
+                pool_size=Config.DB_POOL_SIZE,
+                isolation_level="IMMEDIATE",
+            )
+            self._connection_pool.row_factory = aiosqlite.Row
 
-@asynccontextmanager
-async def _get_connection(self):
-    """Acquire a database connection from the pool."""
-    if not self._connection_pool:
-        self._connection_pool = await aiosqlite.connect(
-            database=self.db_path,
-            timeout=Config.DB_TIMEOUT,
-            check_same_thread=False,
-            pool_size=Config.DB_POOL_SIZE,
-        )
-        self._connection_pool.row_factory = aiosqlite.Row
-
-    async with self._connection_pool.cursor() as cursor:
-        yield cursor
+        async with self._connection_pool.cursor() as cursor:
+            try:
+                await cursor.execute("PRAGMA foreign_keys = ON")
+                yield cursor
+            finally:
+                await cursor.close()
 
     async def move_position_to_trades(
         self, position_id: str, trade_data: Dict[str, Any]
