@@ -558,7 +558,9 @@ async def test_move_position_to_trades_success(
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
     # Configure the mock cursor that conn.execute will return for the SELECT
     mock_select_cursor = AsyncMock(spec=aiosqlite.Cursor)
-    mock_select_cursor.fetchone = AsyncMock()  # Initialize fetchone mock
+    mock_select_cursor.fetchone = AsyncMock(
+        return_value=mock_pos_row
+    )  # Configure fetchone initially
     mock_select_cursor.close = AsyncMock()  # Mock close for the SELECT cursor
 
     # Mock conn.execute with a side_effect function
@@ -566,33 +568,36 @@ async def test_move_position_to_trades_success(
         if "BEGIN TRANSACTION" in sql:
             return None
         elif "SELECT * FROM positions" in sql:
-            # Configure fetchone *just before* returning the cursor
-            mock_select_cursor.fetchone.return_value = mock_pos_row
+            # Return the pre-configured cursor for SELECT
             return mock_select_cursor
         elif "INSERT INTO trades" in sql:
             return AsyncMock(spec=aiosqlite.Cursor)
         elif "DELETE FROM positions" in sql:
             return AsyncMock(spec=aiosqlite.Cursor)
-        elif "ROLLBACK" in sql:  # ROLLBACK is executed directly
+        elif (
+            "COMMIT" in sql or "ROLLBACK" in sql
+        ):  # COMMIT/ROLLBACK called directly on conn
             return None
         elif "PRAGMA journal_mode=WAL" in sql:
             return AsyncMock(spec=aiosqlite.Cursor)
         else:
             raise ValueError(f"Unexpected SQL in mock_conn.execute: {sql}")
 
-    mock_conn.execute = AsyncMock(side_effect=execute_side_effect)
-
     # Ensure connection is established before resetting mocks
     await db_manager._get_connection()
-    mock_conn.commit.reset_mock()  # Reset direct commit mock
-    mock_conn.rollback.reset_mock()  # Reset direct rollback mock
-    mock_conn.execute.reset_mock()  # Reset the main execute mock
-    mock_conn.execute.side_effect = (
-        execute_side_effect  # Re-apply side effect after reset
-    )
-    # Reset mocks on the specific cursor used for SELECT
+
+    # Reset mocks before the test execution
+    mock_conn.commit.reset_mock()
+    mock_conn.rollback.reset_mock()
+    mock_conn.execute.reset_mock()
     mock_select_cursor.fetchone.reset_mock()
     mock_select_cursor.close.reset_mock()
+
+    # Re-apply side effect and ensure fetchone is configured *after* reset
+    mock_conn.execute.side_effect = execute_side_effect
+    mock_select_cursor.fetchone.return_value = (
+        mock_pos_row  # Set return value AFTER reset
+    )
 
     token = "TokenToMove"
     sell_reason = "TP"
