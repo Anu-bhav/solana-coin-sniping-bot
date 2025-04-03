@@ -558,42 +558,41 @@ async def test_move_position_to_trades_success(
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
     # Configure the mock cursor that conn.execute will return for the SELECT
     mock_select_cursor = AsyncMock(spec=aiosqlite.Cursor)
-    mock_select_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+    mock_select_cursor.fetchone = AsyncMock()  # Initialize fetchone mock
     mock_select_cursor.close = AsyncMock()  # Mock close for the SELECT cursor
 
     # Mock conn.execute with a side_effect function
     async def execute_side_effect(sql, params=None):
         if "BEGIN TRANSACTION" in sql:
-            return None  # BEGIN doesn't return a cursor object directly usable
+            return None
         elif "SELECT * FROM positions" in sql:
-            return mock_select_cursor  # Return the cursor configured for SELECT
+            # Configure fetchone *just before* returning the cursor
+            mock_select_cursor.fetchone.return_value = mock_pos_row
+            return mock_select_cursor
         elif "INSERT INTO trades" in sql:
-            # For INSERT/DELETE, we might not need a specific cursor return if not used
-            # Return a generic cursor mock if needed, or just None if execute result isn't used
             return AsyncMock(spec=aiosqlite.Cursor)
         elif "DELETE FROM positions" in sql:
             return AsyncMock(spec=aiosqlite.Cursor)
-        elif "COMMIT" in sql or "ROLLBACK" in sql:
-            return None  # COMMIT/ROLLBACK don't return a cursor
+        elif "ROLLBACK" in sql:  # ROLLBACK is executed directly
+            return None
         elif "PRAGMA journal_mode=WAL" in sql:
-            # PRAGMA might return a cursor, but we don't use its result here
             return AsyncMock(spec=aiosqlite.Cursor)
         else:
-            # Default case or raise error if unexpected SQL
             raise ValueError(f"Unexpected SQL in mock_conn.execute: {sql}")
 
     mock_conn.execute = AsyncMock(side_effect=execute_side_effect)
 
     # Ensure connection is established before resetting mocks
     await db_manager._get_connection()
-    mock_conn.commit.reset_mock()
-    mock_conn.rollback.reset_mock()
+    mock_conn.commit.reset_mock()  # Reset direct commit mock
+    mock_conn.rollback.reset_mock()  # Reset direct rollback mock
     mock_conn.execute.reset_mock()  # Reset the main execute mock
     mock_conn.execute.side_effect = (
         execute_side_effect  # Re-apply side effect after reset
     )
-    mock_select_cursor.fetchone.reset_mock()  # Reset fetchone on the specific cursor
-    mock_select_cursor.close.reset_mock()  # Reset close on the specific cursor
+    # Reset mocks on the specific cursor used for SELECT
+    mock_select_cursor.fetchone.reset_mock()
+    mock_select_cursor.close.reset_mock()
 
     token = "TokenToMove"
     sell_reason = "TP"
@@ -609,6 +608,7 @@ async def test_move_position_to_trades_success(
     assert success is True
 
     # Verify calls using assert_has_calls on the connection's execute method
+    # Note: COMMIT is called directly on the connection, not via execute
     expected_conn_execute_calls = [
         call("BEGIN TRANSACTION;"),
         call(  # The SELECT call
@@ -637,16 +637,21 @@ async def test_move_position_to_trades_success(
             ),
         ),
         call("DELETE FROM positions WHERE id = ?;", (10,)),  # id from mock data
-        call("COMMIT;"),  # Explicit commit call
+        # COMMIT is not called via execute
     ]
-    mock_conn.execute.assert_has_calls(expected_conn_execute_calls, any_order=False)
+    # Check only relevant execute calls
+    # Filter out the PRAGMA call if it happened during _get_connection setup before reset
+    actual_execute_calls = [
+        c for c in mock_conn.execute.call_args_list if "PRAGMA" not in c.args[0]
+    ]
+    assert actual_execute_calls == expected_conn_execute_calls
 
     # Ensure fetchone and close were called on the SELECT cursor
     mock_select_cursor.fetchone.assert_called_once()
     mock_select_cursor.close.assert_called_once()
 
-    # Verify commit was called (implicitly via execute) and rollback wasn't
-    # We check commit via the execute calls now. Rollback still checked directly.
+    # Verify commit was called directly on the connection and rollback wasn't
+    mock_conn.commit.assert_called_once()
     mock_conn.rollback.assert_not_called()
 
     # Verify the INSERT SQL structure specifically
