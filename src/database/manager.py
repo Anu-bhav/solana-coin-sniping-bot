@@ -481,31 +481,32 @@ class DatabaseManager:
             return False  # Assume not processed on error
 
     async def check_if_creator_processed(self, creator_address: str) -> bool:
-        """
-        Checks if a creator address has already been seen in the detections table.
-        Requires 'creator_address' to be populated reliably.
-
-        Args:
-            creator_address: The creator's wallet address.
-
-        Returns:
-            True if the creator exists in the detections table, False otherwise.
-        """
+        """Check if creator exists in detections with retry logic."""
         if not creator_address:
             return False
-        sql = "SELECT 1 FROM detections WHERE creator_address = ? LIMIT 1;"
-        try:
-            conn = await self._get_connection()
-            async with conn.cursor() as cursor:
-                await cursor.execute(sql, (creator_address,))
-                result = await cursor.fetchone()
-            return result is not None
-        except aiosqlite.Error as e:
-            logger.error(
-                f"Error checking if creator processed {creator_address}: {e}",
-                exc_info=True,
-            )
-            return False  # Assume not processed on error
+
+        retries = 3
+        sql = """SELECT 1 FROM detections
+               WHERE creator_address = ?
+               LIMIT 1"""
+
+        for attempt in range(retries):
+            try:
+                async with await self._get_connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute(sql, (creator_address,))
+                        return bool(await cursor.fetchone())
+            except aiosqlite.OperationalError as e:
+                if "locked" in str(e) and attempt < retries - 1:
+                    wait = 0.5 * (attempt + 1)
+                    logger.warning(f"DB locked, retrying in {wait}s...")
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(f"Creator check failed: {e}")
+                return False
+            except aiosqlite.Error as e:
+                logger.error(f"DB error: {e}")
+                return False
 
 
 # Example usage (for testing or integration)
