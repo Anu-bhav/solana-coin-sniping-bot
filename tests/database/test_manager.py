@@ -1,7 +1,6 @@
 # tests/database/test_manager.py
 
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch, call
 from pathlib import Path
 import sys
@@ -11,7 +10,7 @@ import aiosqlite  # Import needed for spec and Row factory check
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
-from src.database.manager import DatabaseManager
+from src.database.manager import DatabaseManager  # noqa: E402
 
 # Make dummy classes for config structure if models.py isn't fully defined/available
 try:
