@@ -44,42 +44,67 @@ class DatabaseManager:
 
         Args:
             position_id: Unique identifier for the position
-            trade_data: Dictionary of trade details
+            trade_data: Dictionary containing:
+                - amount: float
+                - price: float
+                - timestamp: int
 
         Returns:
             bool: True if successful, False on failure
         """
+        required_fields = {"amount", "price", "timestamp"}
+        if not required_fields.issubset(trade_data):
+            logger.error(
+                f"Missing required trade fields: {required_fields - trade_data.keys()}"
+            )
+            return False
+
         async with self._get_connection() as conn:
             try:
-                # Validate position exists
                 await conn.execute("BEGIN IMMEDIATE")
+
+                # Validate position exists and is in open state
                 position = await conn.execute(
-                    "SELECT * FROM positions WHERE id = ?", (position_id,)
+                    """SELECT id, status FROM positions
+                    WHERE id = ? AND status = 'open'
+                    FOR UPDATE""",
+                    (position_id,),
                 )
-                if not await position.fetchone():
-                    logger.error(f"Position {position_id} not found")
+                pos_record = await position.fetchone()
+                if not pos_record:
+                    logger.error(f"Position {position_id} not found or not open")
+                    await conn.connection.rollback()
                     return False
 
-                # Insert trade
+                # Insert trade with parameterized query
                 await conn.execute(
                     """INSERT INTO trades
-                    (position_id, amount, price, timestamp)
-                    VALUES (?, ?, ?, ?)""",
+                    (position_id, amount, price, timestamp, creator_address)
+                    VALUES (?, ?, ?, ?, ?)""",
                     (
                         position_id,
                         trade_data["amount"],
                         trade_data["price"],
                         trade_data["timestamp"],
+                        pos_record["creator_address"],
                     ),
                 )
 
-                # Delete position
-                await conn.execute("DELETE FROM positions WHERE id = ?", (position_id,))
+                # Archive position instead of deleting
+                await conn.execute(
+                    """UPDATE positions SET status = 'closed'
+                    WHERE id = ?""",
+                    (position_id,),
+                )
 
                 await conn.connection.commit()
                 return True
             except aiosqlite.Error as e:
-                logger.error(f"Transaction failed: {str(e)}")
+                logger.error(f"Transaction failed: {str(e)} - Position: {position_id}")
+                await conn.connection.rollback()
+                return False
+            except Exception as e:
+                logger.error(f"Unexpected error: {str(e)}")
                 await conn.connection.rollback()
                 return False
 
@@ -87,37 +112,54 @@ class DatabaseManager:
         self, creator_address: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Check if a creator has been processed with associated trades.
+        Check creator processing status with trade metadata.
 
         Args:
-            creator_address: Solana creator address
+            creator_address: Base58 encoded Solana address
 
         Returns:
-            Dict with processed status and trade count, None if error
+            Dictionary containing:
+            - processed: bool
+            - first_processed_at: Optional[int]
+            - last_trade_at: Optional[int]
+            - total_trades: int
+            - total_volume: float
         """
         async with self._get_connection() as conn:
             try:
                 result = await conn.execute(
-                    """SELECT pc.*, COUNT(t.id) as trade_count
-                    FROM processed_creators pc
-                    LEFT JOIN trades t ON pc.creator_address = t.creator_address
-                    WHERE pc.creator_address = ?
+                    """SELECT
+                        pc.processed,
+                        pc.processed_at AS first_processed_at,
+                        MAX(t.timestamp) AS last_trade_at,
+                        COUNT(t.id) AS total_trades,
+                        COALESCE(SUM(t.amount * t.price), 0) AS total_volume
+                    FROM (
+                        SELECT ? AS creator_address,
+                            EXISTS(SELECT 1 FROM processed_creators WHERE creator_address = ?) AS processed,
+                            (SELECT processed_at FROM processed_creators WHERE creator_address = ?) AS processed_at
+                    ) pc
+                    LEFT JOIN trades t USING(creator_address)
                     GROUP BY pc.creator_address""",
-                    (creator_address,),
+                    (creator_address, creator_address, creator_address),
                 )
-                return await result.fetchone()
+                row = await result.fetchone()
+                return dict(row) if row else None
             except aiosqlite.Error as e:
                 logger.error(f"Creator check failed: {str(e)}")
                 return None
 
     @classmethod
-    async def create_pool(cls):
-        """Create connection pool from configuration."""
+    async def create_pool(cls) -> aiosqlite.Connection:
+        """Initialize connection pool from environment configuration."""
         return await aiosqlite.connect(
             database=Config.DATABASE_URL,
             timeout=Config.DB_TIMEOUT,
             check_same_thread=False,
             pool_size=Config.DB_POOL_SIZE,
+            isolation_level="IMMEDIATE",
+            journal_mode="WAL",
+            cached_statements=Config.DB_STATEMENT_CACHE_SIZE,
         )
 
     async def close(self):
