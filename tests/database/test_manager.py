@@ -556,24 +556,44 @@ async def test_move_position_to_trades_success(
     # Mock the Row object for the fetchone call
     mock_pos_row = MagicMock(spec=aiosqlite.Row)
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
-    mock_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+    # Configure the mock cursor that conn.execute will return for the SELECT
+    mock_select_cursor = AsyncMock(spec=aiosqlite.Cursor)
+    mock_select_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+    mock_select_cursor.close = AsyncMock()  # Mock close for the SELECT cursor
 
-    # Refactored Mocking: Mock execute calls more granularly
-    # The DatabaseManager uses `async with conn:` which handles BEGIN/COMMIT/ROLLBACK implicitly.
-    # We mock the cursor returned by conn.cursor() and its execute method.
-    # We also mock conn.commit() and conn.rollback() directly.
+    # Mock conn.execute with a side_effect function
+    async def execute_side_effect(sql, params=None):
+        if "BEGIN TRANSACTION" in sql:
+            return None  # BEGIN doesn't return a cursor object directly usable
+        elif "SELECT * FROM positions" in sql:
+            return mock_select_cursor  # Return the cursor configured for SELECT
+        elif "INSERT INTO trades" in sql:
+            # For INSERT/DELETE, we might not need a specific cursor return if not used
+            # Return a generic cursor mock if needed, or just None if execute result isn't used
+            return AsyncMock(spec=aiosqlite.Cursor)
+        elif "DELETE FROM positions" in sql:
+            return AsyncMock(spec=aiosqlite.Cursor)
+        elif "COMMIT" in sql or "ROLLBACK" in sql:
+            return None  # COMMIT/ROLLBACK don't return a cursor
+        elif "PRAGMA journal_mode=WAL" in sql:
+            # PRAGMA might return a cursor, but we don't use its result here
+            return AsyncMock(spec=aiosqlite.Cursor)
+        else:
+            # Default case or raise error if unexpected SQL
+            raise ValueError(f"Unexpected SQL in mock_conn.execute: {sql}")
+
+    mock_conn.execute = AsyncMock(side_effect=execute_side_effect)
 
     # Ensure connection is established before resetting mocks
     await db_manager._get_connection()
     mock_conn.commit.reset_mock()
     mock_conn.rollback.reset_mock()
-    mock_conn.cursor.reset_mock()
-    mock_cursor.execute.reset_mock()
-    mock_cursor.fetchone.reset_mock()
-
-    # Configure the cursor mock for the sequence of operations
-    # The cursor is obtained once via mock_conn.cursor()
-    mock_conn.cursor.return_value = mock_cursor
+    mock_conn.execute.reset_mock()  # Reset the main execute mock
+    mock_conn.execute.side_effect = (
+        execute_side_effect  # Re-apply side effect after reset
+    )
+    mock_select_cursor.fetchone.reset_mock()  # Reset fetchone on the specific cursor
+    mock_select_cursor.close.reset_mock()  # Reset close on the specific cursor
 
     token = "TokenToMove"
     sell_reason = "TP"
@@ -588,9 +608,10 @@ async def test_move_position_to_trades_success(
 
     assert success is True
 
-    # Verify calls using assert_has_calls on the cursor's execute method
-    expected_cursor_calls = [
-        call(  # The initial SELECT call
+    # Verify calls using assert_has_calls on the connection's execute method
+    expected_conn_execute_calls = [
+        call("BEGIN TRANSACTION;"),
+        call(  # The SELECT call
             "SELECT * FROM positions WHERE token_mint = ? AND status = 'ACTIVE';",
             (token,),
         ),
@@ -616,29 +637,30 @@ async def test_move_position_to_trades_success(
             ),
         ),
         call("DELETE FROM positions WHERE id = ?;", (10,)),  # id from mock data
+        call("COMMIT;"),  # Explicit commit call
     ]
-    # Check that the cursor execute method was called with the expected sequence
-    mock_cursor.execute.assert_has_calls(expected_cursor_calls, any_order=False)
-    # Ensure fetchone was called after the SELECT
-    mock_cursor.fetchone.assert_called_once()
+    mock_conn.execute.assert_has_calls(expected_conn_execute_calls, any_order=False)
 
-    # Verify commit was called on the connection (signifying successful transaction)
-    mock_conn.commit.assert_called_once()
-    mock_conn.rollback.assert_not_called()  # Ensure rollback wasn't called
+    # Ensure fetchone and close were called on the SELECT cursor
+    mock_select_cursor.fetchone.assert_called_once()
+    mock_select_cursor.close.assert_called_once()
+
+    # Verify commit was called (implicitly via execute) and rollback wasn't
+    # We check commit via the execute calls now. Rollback still checked directly.
+    mock_conn.rollback.assert_not_called()
 
     # Verify the INSERT SQL structure specifically
+    # Find the insert call within the connection's execute calls
     insert_call = next(
-        c
-        for c in mock_cursor.execute.call_args_list
-        if "INSERT INTO trades" in c.args[0]
+        c for c in mock_conn.execute.call_args_list if "INSERT INTO trades" in c.args[0]
     )
     insert_sql_actual = " ".join(insert_call.args[0].split())
     insert_sql_expected = " ".join(
         """
-            INSERT INTO trades (token_mint, lp_address, buy_timestamp, buy_amount_sol, buy_amount_tokens, buy_price, buy_tx_signature, buy_provider_identifier,
-                                sell_timestamp, sell_amount_tokens, sell_amount_sol, sell_price, sell_tx_signature, sell_provider_identifier, sell_reason, pnl_sol, pnl_percentage)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?);
-            """.split()
+        INSERT INTO trades (token_mint, lp_address, buy_timestamp, buy_amount_sol, buy_amount_tokens, buy_price, buy_tx_signature, buy_provider_identifier,
+                            sell_timestamp, sell_amount_tokens, sell_amount_sol, sell_price, sell_tx_signature, sell_provider_identifier, sell_reason, pnl_sol, pnl_percentage)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?);
+        """.split()
     )
     assert insert_sql_actual == insert_sql_expected
 
