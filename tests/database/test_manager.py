@@ -558,30 +558,8 @@ async def test_move_position_to_trades_success(
     mock_pos_row.__getitem__.side_effect = lambda k: position_row_data[k]
     # Configure the mock cursor that conn.execute will return for the SELECT
     mock_select_cursor = AsyncMock(spec=aiosqlite.Cursor)
-    mock_select_cursor.fetchone = AsyncMock(
-        return_value=mock_pos_row
-    )  # Configure fetchone initially
-    mock_select_cursor.close = AsyncMock()  # Mock close for the SELECT cursor
-
-    # Mock conn.execute with a side_effect function
-    async def execute_side_effect(sql, params=None):
-        if "BEGIN TRANSACTION" in sql:
-            return None
-        elif "SELECT * FROM positions" in sql:
-            # Return the pre-configured cursor for SELECT
-            return mock_select_cursor
-        elif "INSERT INTO trades" in sql:
-            return AsyncMock(spec=aiosqlite.Cursor)
-        elif "DELETE FROM positions" in sql:
-            return AsyncMock(spec=aiosqlite.Cursor)
-        elif (
-            "COMMIT" in sql or "ROLLBACK" in sql
-        ):  # COMMIT/ROLLBACK called directly on conn
-            return None
-        elif "PRAGMA journal_mode=WAL" in sql:
-            return AsyncMock(spec=aiosqlite.Cursor)
-        else:
-            raise ValueError(f"Unexpected SQL in mock_conn.execute: {sql}")
+    mock_select_cursor.fetchone = AsyncMock(return_value=mock_pos_row)
+    mock_select_cursor.close = AsyncMock()
 
     # Ensure connection is established before resetting mocks
     await db_manager._get_connection()
@@ -593,11 +571,17 @@ async def test_move_position_to_trades_success(
     mock_select_cursor.fetchone.reset_mock()
     mock_select_cursor.close.reset_mock()
 
-    # Re-apply side effect and ensure fetchone is configured *after* reset
-    mock_conn.execute.side_effect = execute_side_effect
-    mock_select_cursor.fetchone.return_value = (
-        mock_pos_row  # Set return value AFTER reset
-    )
+    # Configure execute side effect as a list for the transaction flow
+    # Note: PRAGMA is handled during initial connection setup, before reset
+    mock_conn.execute.side_effect = [
+        None,  # BEGIN TRANSACTION
+        mock_select_cursor,  # SELECT positions
+        AsyncMock(spec=aiosqlite.Cursor),  # INSERT trades
+        AsyncMock(spec=aiosqlite.Cursor),  # DELETE positions
+        # COMMIT is called directly on mock_conn, not via execute
+    ]
+    # Ensure fetchone is configured correctly AFTER reset
+    mock_select_cursor.fetchone.return_value = mock_pos_row
 
     token = "TokenToMove"
     sell_reason = "TP"
