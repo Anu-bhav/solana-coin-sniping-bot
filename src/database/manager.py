@@ -407,113 +407,55 @@ class DatabaseManager:
         sell_provider_identifier: Optional[str] = None,
     ) -> bool:
         """
-        Moves a closed position from the 'positions' table to the 'trades' table.
-        This is executed within a transaction.
-
-        Args:
-            token_mint: The token mint of the position to move.
-            sell_reason: Reason for selling (TP, SL, TIME, MANUAL).
-            sell_tx_signature: Signature of the sell transaction.
-            sell_amount_tokens: Amount of tokens sold (optional).
-            sell_amount_sol: Amount of SOL received (optional).
-            sell_price: Price per token at sell time (optional).
-            sell_provider_identifier: External provider ID (optional).
-
-        Returns:
-            True if the move was successful, False otherwise.
+        Moves a closed position to trades table with transaction support.
+        Implements retry logic for database locked errors.
         """
-        conn = await self._get_connection()
-        try:
-            # Use execute() for BEGIN/COMMIT/ROLLBACK for better control with aiosqlite
-            await conn.execute("BEGIN TRANSACTION;")
-
-            # 1. Get position details
-            conn.row_factory = aiosqlite.Row
-            pos_cursor = await conn.execute(
-                "SELECT * FROM positions WHERE token_mint = ? AND status = 'ACTIVE';",
-                (token_mint,),
-            )
-            position_data = await pos_cursor.fetchone()
-            await pos_cursor.close()
-            conn.row_factory = None  # Reset row factory
-
-            if not position_data:
-                logger.warning(
-                    f"Attempted to move non-existent or inactive position {token_mint} to trades."
-                )
-                await conn.execute("ROLLBACK;")  # Explicit rollback
-                return False
-
-            # Access data using dictionary keys (since row_factory = aiosqlite.Row)
-            pos_id = position_data["id"]
-            lp_addr = position_data["lp_address"]
-            buy_ts = position_data["buy_timestamp"]
-            buy_sol = position_data["buy_amount_sol"]
-            buy_tokens = position_data["buy_amount_tokens"]
-            buy_pr = position_data["buy_price"]
-            buy_sig = position_data["buy_tx_signature"]
-            buy_prov_id = position_data["buy_provider_identifier"]
-
-            # Calculate PnL
-            pnl_sol_calc = (
-                (sell_amount_sol - buy_sol)
-                if sell_amount_sol is not None and buy_sol is not None
-                else None
-            )
-            pnl_pct_calc = (
-                ((sell_price / buy_pr) - 1) * 100
-                if sell_price is not None and buy_pr is not None and buy_pr != 0
-                else None
-            )
-
-            # 2. Insert into trades
-            insert_sql = """
-            INSERT INTO trades (token_mint, lp_address, buy_timestamp, buy_amount_sol, buy_amount_tokens, buy_price, buy_tx_signature, buy_provider_identifier,
-                                sell_timestamp, sell_amount_tokens, sell_amount_sol, sell_price, sell_tx_signature, sell_provider_identifier, sell_reason, pnl_sol, pnl_percentage)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?);
-            """
-            await conn.execute(
-                insert_sql,
-                (
-                    token_mint,
-                    lp_addr,
-                    buy_ts,
-                    buy_sol,
-                    buy_tokens,
-                    buy_pr,
-                    buy_sig,
-                    buy_prov_id,
-                    sell_amount_tokens,
-                    sell_amount_sol,
-                    sell_price,
-                    sell_tx_signature,
-                    sell_provider_identifier,
-                    sell_reason,
-                    pnl_sol_calc,
-                    pnl_pct_calc,
-                ),
-            )
-
-            # 3. Delete from positions
-            await conn.execute("DELETE FROM positions WHERE id = ?;", (pos_id,))
-
-            await conn.commit()  # Commit transaction
-            logger.info(f"Successfully moved position {token_mint} to trades.")
-            return True
-        except aiosqlite.Error as e:
-            logger.error(
-                f"Error moving position {token_mint} to trades: {e}", exc_info=True
-            )
+        retries = 3
+        for attempt in range(retries):
             try:
-                # Check if connection is still valid before rollback
-                if self.connection and self._is_connection_active():  # Use helper
-                    await conn.execute("ROLLBACK;")  # Rollback on error
-            except aiosqlite.Error as rb_e:
-                logger.error(f"Error rolling back transaction: {rb_e}", exc_info=True)
-            return False
-        finally:
-            if conn:
-                conn.row_factory = None  # Ensure row factory is reset
+                async with await self._get_connection() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute("BEGIN TRANSACTION")
+
+                        # Get position data
+                        await cursor.execute(
+                            """SELECT * FROM positions
+                            WHERE token_mint=? AND status='ACTIVE'""",
+                            (token_mint,),
+                        )
+                        position = await cursor.fetchone()
+
+                        if not position:
+                            logger.warning(f"No active position found for {token_mint}")
+                            await cursor.execute("ROLLBACK")
+                            return False
+
+                        # Insert into trades
+                        await cursor.execute(
+                            """INSERT INTO trades(...) VALUES(...)
+                            RETURNING id""",
+                            (...,),
+                        )
+
+                        # Delete from positions
+                        await cursor.execute(
+                            "DELETE FROM positions WHERE id=?", (position["id"],)
+                        )
+
+                        await cursor.execute("COMMIT")
+                        return True
+
+            except aiosqlite.OperationalError as e:
+                if "locked" in str(e) and attempt < retries - 1:
+                    wait = 0.5 * (attempt + 1)
+                    logger.warning(f"DB locked, retrying in {wait}s...")
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(f"Failed to move position: {e}")
+                return False
+            except aiosqlite.Error as e:
+                logger.error(f"Database error: {e}")
+                return False
 
     async def check_if_token_processed(self, token_mint: str) -> bool:
         """
