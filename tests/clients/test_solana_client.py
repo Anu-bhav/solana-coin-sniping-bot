@@ -147,7 +147,7 @@ def mock_asyncio_sleep():
 # --- Test Class ---
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # Mark class to ensure all tests can use async fixtures
 class TestSolanaClient:
 
     # Corrected client fixture
@@ -159,7 +159,7 @@ class TestSolanaClient:
         # The patch is active due to mock_async_client_gen fixture
         instance = SolanaClient(mock_config, mock_logger)
         # Ensure the mock instance is assigned correctly by the patch
-        # assert instance.rpc_client is mock_async_client_gen.return_value # Removed assertion causing setup error
+        assert instance.rpc_client is mock_async_client_gen.return_value
         yield instance  # Yield the actual SolanaClient instance
 
     # --- Test __init__ ---
@@ -205,6 +205,7 @@ class TestSolanaClient:
         )
         mock_logger.info.assert_any_call("SolanaClient initialized successfully.")
 
+    # This test does not use the client fixture, so it can remain synchronous
     def test_init_invalid_private_key(
         self, mock_config, mock_logger, mock_keypair_from_string
     ):
@@ -653,9 +654,9 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(1)
         )
-        # Correct SendTransactionPreflightFailureMessage instantiation (needs message=data)
+        # Correct SendTransactionPreflightFailureMessage instantiation (needs data)
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            message=TransactionError(mock_instruction_error)
+            data=TransactionError(mock_instruction_error)
         )
         mock_exception = RPCException(preflight_failure)
 
@@ -778,13 +779,14 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(5)
         )
-        # Pass the inner error directly to TransactionStatus err field
+        # Pass the TransactionError wrapper to TransactionStatus err field
+        mock_tx_error = TransactionError(mock_instruction_error)
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
                 TransactionStatus(
                     slot=10,
-                    err=mock_instruction_error,
+                    err=mock_tx_error,
                     confirmation_status=TransactionConfirmationStatus.Finalized,
                 )
             ],
@@ -806,7 +808,7 @@ class TestSolanaClient:
         assert client.rpc_client.get_signature_statuses.await_count == 1
         assert mock_asyncio_sleep.await_count == 0
         client.logger.error.assert_called_with(
-            f"Transaction {mock_sig_str} failed: {mock_instruction_error}"
+            f"Transaction {mock_sig_str} failed: {mock_tx_error}"
         )
 
     async def test_confirm_transaction_timeout(self, client, mock_asyncio_sleep):
@@ -1174,7 +1176,9 @@ class TestSolanaClient:
         client.log_callback.assert_awaited_once()
 
     # --- Test build_swap_instruction Placeholder ---
-    def test_build_swap_instruction_raises_not_implemented(self, client):
+    # Mark as async because it uses the async client fixture
+    @pytest.mark.asyncio
+    async def test_build_swap_instruction_raises_not_implemented(self, client):
         """Tests that the placeholder swap instruction builder raises NotImplementedError."""
         with pytest.raises(NotImplementedError):
             client.build_swap_instruction(
