@@ -20,7 +20,7 @@ from solders.transaction_status import (
     UiInnerInstructions,
     # Removed AccountInUse, InstructionError, TransactionErrorInstructionError imports
 )
-from solders.transaction import TransactionError  # Keep TransactionError
+from solders.transaction import TransactionError  # Keep base TransactionError
 from solders.signature import Signature
 
 # Import the class to test
