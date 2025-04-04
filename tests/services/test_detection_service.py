@@ -100,10 +100,8 @@ def create_mock_log_notification(
 ) -> LogsNotification:
     """Creates a mock LogsNotification object."""
     log_result = RpcLogsResponse(signature=signature, logs=logs, err=err)
-    # Use keyword arguments for RpcResponseContext based on previous TypeError
-    # Provide api_version=None explicitly as it seemed required previously
-    context = RpcResponseContext(slot=1, api_version=None)
-    context.value = log_result  # Assign value after creation
+    # Revert RpcResponseContext instantiation to include value
+    context = RpcResponseContext(slot=1, value=log_result)
     notification = LogsNotification(subscription=123, result=context)
     return notification
 
@@ -135,9 +133,9 @@ def create_mock_tx_details(
         compute_units_consumed=None,
         return_data=None,
     )
-    # Revert UiMessage instantiation to use Pubkey objects for account_keys
+    # Revert UiMessage instantiation to use list of strings for account_keys
     mock_message = UiMessage(
-        account_keys=[fee_payer, Pubkey.new_unique()],  # Use Pubkey objects
+        account_keys=[str(fee_payer), str(Pubkey.new_unique())],  # Use strings
         instructions=[],
         recent_blockhash=str(Signature.new_unique()),
         address_table_lookups=None,
@@ -156,10 +154,11 @@ def create_mock_tx_details(
 # --- Test Class ---
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # Mark class to ensure all tests can use async fixtures
 class TestDetectionService:
 
-    def test_initialization(
+    # Mark test as async because it uses async fixtures
+    async def test_initialization(
         self,
         detection_service,
         mock_solana_client,
@@ -250,10 +249,8 @@ class TestDetectionService:
     ):
         """Test that logs from failed transactions are ignored."""
         sig = Signature.new_unique()
-        # Use specific importable error type and wrapper
-        mock_error = TransactionError(
-            TransactionErrorInstructionError(0, InstructionErrorFieldless.AccountInUse)
-        )
+        # Use TransactionError.AccountInUse based on previous AttributeError
+        mock_error = TransactionError.AccountInUse
         mock_notification = create_mock_log_notification(sig, ["Log 1"], err=mock_error)
 
         await detection_service._handle_log_message(mock_notification)
@@ -504,7 +501,9 @@ class TestDetectionService:
         detection_service.db_manager.add_detection.assert_not_called()
 
     # Test for _parse_transaction_for_pool (Placeholder version)
-    def test_parse_transaction_for_pool_placeholder(
+    # Mark as async because it uses async fixtures
+    @pytest.mark.asyncio
+    async def test_parse_transaction_for_pool_placeholder(
         self, detection_service, test_config
     ):
         """Test the placeholder parsing logic returns expected structure (or None)."""

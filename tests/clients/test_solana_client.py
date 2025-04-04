@@ -6,6 +6,9 @@ import pytest
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.rpc import errors as solders_errors
+
+# Need SendTransactionPreflightFailureData for mock
+from solders.rpc.errors import SendTransactionPreflightFailureData
 from solana.rpc.core import RPCException
 from solana.rpc.commitment import Confirmed, Finalized
 from solders.rpc.responses import (
@@ -23,16 +26,13 @@ from solders.rpc.responses import (
     RpcTokenAccountBalance,
     RpcSupply,
     RpcSimulateTransactionResult,
-    # RpcConfirmedTransactionStatusWithSignature, # Keep removed
 )
 from solders.account_decoder import UiTokenAmount
-
-# Re-add imports from solders.transaction_status, using specific error types
 from solders.transaction_status import (
     TransactionStatus,
     TransactionConfirmationStatus,
-    InstructionErrorCustom,  # Import specific error type
-    TransactionErrorInstructionError,  # Import wrapper
+    InstructionErrorCustom,
+    TransactionErrorInstructionError,
 )
 from solders.transaction import TransactionError, Transaction
 import time
@@ -147,24 +147,22 @@ def mock_asyncio_sleep():
 # --- Test Class ---
 
 
-@pytest.mark.asyncio  # Mark class to ensure all tests can use async fixtures
+@pytest.mark.asyncio  # Keep class marked async
 class TestSolanaClient:
 
-    # Corrected client fixture
+    # Make fixture synchronous
     @pytest.fixture
-    async def client(self, mock_config, mock_logger, mock_async_client_gen):
+    def client(self, mock_config, mock_logger, mock_async_client_gen):
         """Fixture to create a SolanaClient instance for testing."""
         from src.clients.solana_client import SolanaClient
 
-        # The patch is active due to mock_async_client_gen fixture
         instance = SolanaClient(mock_config, mock_logger)
-        # Ensure the mock instance is assigned correctly by the patch
         assert instance.rpc_client is mock_async_client_gen.return_value
-        yield instance  # Yield the actual SolanaClient instance
+        yield instance
 
     # --- Test __init__ ---
 
-    # This test needs client fixture, which is async, so mark test as async
+    # Keep test async as it uses async fixtures indirectly via client
     async def test_init_success(
         self,
         client,
@@ -221,7 +219,6 @@ class TestSolanaClient:
 
     async def test_close(self, client, mock_async_client_gen, mock_websocket_connect):
         """Tests the close method."""
-        # assert hasattr(client, 'wss_connection') # Removed assertion causing failure
         client.wss_connection = mock_websocket_connect.mock_protocol
         client.log_subscription_task = AsyncMock()
         client.log_subscription_task.done.return_value = False
@@ -654,9 +651,10 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(1)
         )
-        # Correct SendTransactionPreflightFailureMessage instantiation (needs data)
+        # Correct SendTransactionPreflightFailureMessage instantiation (needs message)
+        mock_tx_error = TransactionError(mock_instruction_error)
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            data=TransactionError(mock_instruction_error)
+            message=mock_tx_error
         )
         mock_exception = RPCException(preflight_failure)
 
