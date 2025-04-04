@@ -335,16 +335,7 @@ class SolanaClient:
             ]
             full_instructions = compute_budget_instructions + instructions
             # 3. Compile Message (positional arguments: instructions, payer)
-            # The recent_blockhash is associated with the signing process, not the message compilation itself.
-            message = Message(
-                full_instructions,
-                self.keypair.pubkey(),
-                # recent_blockhash is not part of Message constructor
-            )
-
-            # 3. Compile Message (positional arguments: instructions, payer)
             message = Message(full_instructions, self.keypair.pubkey())
-
             # 4. Create Transaction from Message (signatures added during signing)
             # Constructor: message, signatures
             tx = Transaction(
