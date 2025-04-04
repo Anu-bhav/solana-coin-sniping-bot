@@ -29,6 +29,8 @@ from solders.rpc.responses import (
 from solders.transaction import (
     TransactionError,
     Transaction,
+    TransactionErrorType,  # Try importing
+    TransactionErrorTypeTagged,  # Try importing
     # TransactionErrorType, # Accessed via TransactionError
 )
 import time  # Import time for timeout test
@@ -489,9 +491,12 @@ class TestSolanaClient:
             context=RpcResponseContext(slot=102),
             # Corrected: Use RpcSimulateTransactionResult
             value=RpcSimulateTransactionResult(
+                # Constructing the error based on TypeError traceback
                 err=TransactionError(
-                    TransactionError.InstructionError(0, 0)
-                ),  # This error type might also need fixing later
+                    TransactionErrorType.Tagged(
+                        TransactionErrorTypeTagged.InstructionError(0, 0)
+                    )
+                ),
                 logs=["Log1", "Error Log"],
                 accounts=None,
                 units_consumed=5000,
