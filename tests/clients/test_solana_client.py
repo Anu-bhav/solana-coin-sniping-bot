@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 import pytest
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
-from solders.rpc import errors  # Updated import style
+from solders.rpc import errors as solders_errors  # Alias to avoid name clash
+from solana.rpc.core import RPCException  # Import the correct exception
 from solana.rpc.commitment import Confirmed, Finalized  # Commitment levels
 
 from solders.rpc.responses import (
@@ -362,8 +363,9 @@ class TestSolanaClient:
         mock_rpc_error = {
             "code": 123,
             "message": "Temporary glitch",
-        }  # Structure for errors.RPCException
-        mock_exception = errors.RPCException(mock_rpc_error)
+        }
+        # Use the imported RPCException
+        mock_exception = RPCException(mock_rpc_error)
 
         client.rpc_client.get_balance = AsyncMock(
             side_effect=[
@@ -416,14 +418,15 @@ class TestSolanaClient:
         mock_rpc_error = {
             "code": 429,
             "message": "Too Many Requests",
-        }  # Structure for errors.RPCException
-        mock_exception = errors.RPCException(mock_rpc_error)
+        }
+        # Use the imported RPCException
+        mock_exception = RPCException(mock_rpc_error)
 
         client.rpc_client.get_balance = AsyncMock(
             side_effect=mock_exception
         )  # Always fail
 
-        with pytest.raises(errors.RPCException) as exc_info:
+        with pytest.raises(RPCException) as exc_info:  # Use correct exception
             await client.get_balance(mock_pubkey)
 
         assert exc_info.value == mock_exception  # Should raise the last exception
@@ -685,32 +688,40 @@ class TestSolanaClient:
         mock_rpc_error = {
             "code": 500,
             "message": "Internal Server Error",
-        }  # Structure for errors.RPCException
-        mock_exception = errors.RPCException(mock_rpc_error)
+        }
+        # Use the imported RPCException
+        mock_exception = RPCException(mock_rpc_error)
         client.rpc_client.get_latest_blockhash = AsyncMock(
             side_effect=mock_exception
         )  # Fail early
 
-        with pytest.raises(errors.RPCException) as exc_info:
+        with pytest.raises(RPCException) as exc_info:  # Use correct exception
             # The actual call being tested is get_latest_blockhash which fails
             await client.get_latest_blockhash()  # Re-trigger the error for the test context
 
-        assert exc_info.value == mock_exception
+        assert (
+            exc_info.value.args[0] == mock_rpc_error
+        )  # Check the error dict within the exception
         client.logger.exception.assert_called_with(
-            f"RPC error during transaction processing: {mock_exception}"
+            f"RPC error during transaction processing: {exc_info.value}"  # Log the actual exception caught
         )
 
     async def test_create_sign_send_transaction_preflight_error(
         self, client, mock_instructions, mock_blockhash_resp
     ):
         """Tests handling of TransactionError (like preflight failure) during sending."""
-        # Simulate a preflight failure wrapped in errors.RPCException
-        preflight_failure = errors.SendTransactionPreflightFailureMessage(
-            TransactionError(TransactionError.InstructionError(0, 1)),  # Example error
-            logs=[],
-            units_consumed=0,
+        # Simulate a preflight failure wrapped in RPCException
+        preflight_failure = (
+            solders_errors.SendTransactionPreflightFailureMessage(  # Use correct alias
+                TransactionError(
+                    TransactionError.InstructionError(0, 1)
+                ),  # Example error
+                logs=[],
+                units_consumed=0,
+            )
         )
-        mock_exception = errors.RPCException(preflight_failure)
+        # Use the imported RPCException
+        mock_exception = RPCException(preflight_failure)
 
         client.rpc_client.get_latest_blockhash = AsyncMock(
             return_value=mock_blockhash_resp
@@ -718,18 +729,15 @@ class TestSolanaClient:
         client.rpc_client.send_raw_transaction = AsyncMock(side_effect=mock_exception)
         client.confirm_transaction = AsyncMock()  # Should not be reached
 
-        with pytest.raises(
-            errors.RPCException
-        ) as exc_info:  # It's still raised as errors.RPCException
+        with pytest.raises(RPCException) as exc_info:  # Use correct exception
             await client.create_sign_send_transaction(
                 mock_instructions, dry_run=False, skip_confirmation=False
             )
 
         assert exc_info.value == mock_exception
-        # Check if specific logging for TransactionError occurred (depends on exact exception handling in main code)
-        # In the current code, it fall nto the eneral errors.RPCException block
+        # Check if specific logging for TransactionError occurred
         client.logger.exception.assert_any_call(
-            f"RPC error during transaction processing: {mock_exception}"
+            f"RPC error during transaction processing: {exc_info.value}"  # Log the actual exception caught
         )
 
     async def test_confirm_transaction_success_finalized(
@@ -853,7 +861,9 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        mock_tx_error = TransactionError(TransactionError.InstructionError(0, 5))
+        mock_tx_error = TransactionError.InstructionError(
+            0, 5
+        )  # Assume nested structure
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
@@ -933,14 +943,15 @@ class TestSolanaClient:
         mock_rpc_error = {
             "code": 503,
             "message": "Service Unavailable",
-        }  # Structure for errors.RPCException
-        mock_exception = errors.RPCException(mock_rpc_error)
+        }
+        # Use the imported RPCException
+        mock_exception = RPCException(mock_rpc_error)
 
         client.rpc_client.get_signature_statuses = AsyncMock(
             side_effect=mock_exception
         )  # Fail immediately
 
-        with pytest.raises(errors.RPCException) as exc_info:
+        with pytest.raises(RPCException) as exc_info:  # Use correct exception
             await client.confirm_transaction(mock_sig_str, commitment=Finalized)
 
         assert exc_info.value == mock_exception
@@ -1128,9 +1139,9 @@ class TestSolanaClient:
     ):
         """Tests handling of failure during the subscription call."""
         await client.connect_wss()  # Connect first
-        mock_websocket_connect.mock_protocol.logs_subscribe.side_effect = (
-            errors.RPCException("Subscription failed")
-        )
+        mock_websocket_connect.mock_protocol.logs_subscribe.side_effect = RPCException(
+            "Subscription failed"
+        )  # Use correct exception
         # Mock close_wss_connection to check if it's called on failure
         client.close_wss_connection = AsyncMock()
 
@@ -1138,7 +1149,7 @@ class TestSolanaClient:
 
         assert client.log_subscription_task is None  # Task should not be set
         client.logger.exception.assert_called_with(
-            "Failed to start log subscription: errors.RPCException('Subscription failed')"
+            f"Failed to start log subscription: {RPCException('Subscription failed')}"
         )
         # Assert cleanup was called
         client.close_wss_connection.assert_awaited_once()
@@ -1314,13 +1325,16 @@ class TestSolanaClient:
         self, client, mock_instructions, mock_blockhash_resp
     ):
         """Tests handling of TransactionError (like preflight failure) during sending."""
-        # Simulate a preflight failure wrapped in errors.RPCException
-        preflight_failure = errors.SendTransactionPreflightFailureMessage(
-            TransactionError(TransactionError.InstructionError(0, 1)),  # Example error
-            logs=[],
-            units_consumed=0,
+        # Simulate a preflight failure wrapped in RPCException
+        preflight_failure = (
+            solders_errors.SendTransactionPreflightFailureMessage(  # Use aliased import
+                TransactionError(TransactionError.InstructionError(0, 1)),
+                logs=[],
+                units_consumed=0,
+            )
         )
-        mock_exception = errors.RPCException(preflight_failure)
+        # Use the imported RPCException
+        mock_exception = RPCException(preflight_failure)
 
         client.rpc_client.get_latest_blockhash = AsyncMock(
             return_value=mock_blockhash_resp
@@ -1328,18 +1342,15 @@ class TestSolanaClient:
         client.rpc_client.send_raw_transaction = AsyncMock(side_effect=mock_exception)
         client.confirm_transaction = AsyncMock()  # Should not be reached
 
-        with pytest.raises(
-            errors.RPCException
-        ) as exc_info:  # It's still raised as errors.RPCException
+        with pytest.raises(RPCException) as exc_info:  # Use correct exception
             await client.create_sign_send_transaction(
                 mock_instructions, dry_run=False, skip_confirmation=False
             )
 
         assert exc_info.value == mock_exception
-        # Check if specific logging for TransactionError occurred (depends on exact exception handling in main code)
-        # In the current code, it falls into the general errors.RPCException block
+        # Check if specific logging for TransactionError occurred
         client.logger.exception.assert_any_call(
-            f"RPC error during transaction processing: {mock_exception}"
+            f"RPC error during transaction processing: {exc_info.value}"  # Log the actual exception caught
         )
 
     async def test_confirm_transaction_success_finalized(
@@ -1465,7 +1476,9 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        mock_tx_error = TransactionError(TransactionError.InstructionError(0, 5))
+        mock_tx_error = TransactionError.InstructionError(
+            0, 5
+        )  # Assume nested structure
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
@@ -1505,6 +1518,7 @@ class TestSolanaClient:
                     slot=10,
                     err=None,
                     confirmation_status=None,
+                    # Removed confirmations argument based on TypeError
                 )
             ],
         )
@@ -1545,14 +1559,15 @@ class TestSolanaClient:
         mock_rpc_error = {
             "code": 503,
             "message": "Service Unavailable",
-        }  # Structure for errors.RPCException
-        mock_exception = errors.RPCException(mock_rpc_error)
+        }
+        # Use the imported RPCException
+        mock_exception = RPCException(mock_rpc_error)
 
         client.rpc_client.get_signature_statuses = AsyncMock(
             side_effect=mock_exception
         )  # Fail immediately
 
-        with pytest.raises(errors.RPCException) as exc_info:
+        with pytest.raises(RPCException) as exc_info:  # Use correct exception
             await client.confirm_transaction(mock_sig_str, commitment=Finalized)
 
         assert exc_info.value == mock_exception
@@ -1740,9 +1755,9 @@ class TestSolanaClient:
     ):
         """Tests handling of failure during the subscription call."""
         await client.connect_wss()  # Connect first
-        mock_websocket_connect.mock_protocol.logs_subscribe.side_effect = (
-            errors.RPCException("Subscription failed")
-        )
+        mock_websocket_connect.mock_protocol.logs_subscribe.side_effect = RPCException(
+            "Subscription failed"
+        )  # Use correct exception
         # Mock close_wss_connection to check if it's called on failure
         client.close_wss_connection = AsyncMock()
 
