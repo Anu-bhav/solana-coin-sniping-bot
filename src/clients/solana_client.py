@@ -22,11 +22,13 @@ from solders.rpc.responses import (
     RpcSimulateTransactionResult,
 )
 from solders.transaction import (
+    Transaction,  # Keep legacy Transaction
     TransactionError,
-    VersionedTransaction,
-)  # Remove legacy Transaction
+    VersionedTransaction,  # Add back VersionedTransaction
+)
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
-from solders.message import Message, MessageV0  # Add MessageV0
+
+# from solders.message import Message # No longer needed for new_signed_with_payer
 from solders.instruction import Instruction
 
 from solana.rpc.async_api import AsyncClient  # Updated import path
@@ -337,34 +339,27 @@ class SolanaClient:
                 set_compute_unit_limit(self.compute_units),
             ]
             full_instructions = compute_budget_instructions + instructions
-            # 3. Compile MessageV0
-            message = MessageV0.try_compile(
-                payer=self.keypair.pubkey(),
-                instructions=full_instructions,
-                address_lookup_table_accounts=[],  # No LUTs for now
-                recent_blockhash=recent_blockhash,
+            # 3. Create and Sign Transaction using new_signed_with_payer
+            # Positional args: instructions: List[Instruction], payer: Pubkey, signing_keypairs: List[Keypair], recent_blockhash: Hash
+            tx = Transaction.new_signed_with_payer(
+                full_instructions,  # Instructions list
+                self.keypair.pubkey(),  # Payer's Pubkey
+                all_signers,  # List of Keypair objects for signing (includes payer)
+                recent_blockhash,
             )
-
-            # 4. Create VersionedTransaction (unsigned initially)
-            tx = VersionedTransaction(
-                message, []
-            )  # Pass empty list for signatures initially
-
-            # 5. Sign VersionedTransaction
-            tx.sign(all_signers, recent_blockhash)  # Pass all signers and blockhash
+            # No need for separate tx.sign or tx.sign_partial calls now
 
             self.logger.debug(
-                f"VersionedTransaction created and signed by {len(all_signers)} signers."
+                f"Transaction created and signed by {len(all_signers)} signers."
             )
 
-            # 5. Send or Simulate
+            # 4. Send or Simulate (Adjusted step number)
             if dry_run:
                 self.logger.info("Dry running transaction...")
-                # Wrap in VersionedTransaction for simulation
-                versioned_tx = VersionedTransaction(tx)
+                # Simulate legacy Transaction directly
                 simulation_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.simulate_transaction,
-                    versioned_tx,
+                    tx,  # Pass legacy tx directly
                     sig_verify=True,  # Verify signatures before simulating
                     commitment=commitment,
                 )
@@ -381,12 +376,11 @@ class SolanaClient:
                 # Use send_raw_transaction if already serialized, or send_transaction
                 # send_transaction handles serialization and signing again, which is redundant but simpler API
                 # Let's serialize manually for clarity
-                # Wrap in VersionedTransaction before serializing for sending
-                versioned_tx = VersionedTransaction(tx)
-                serialized_tx = versioned_tx.serialize()
+                # Serialize legacy Transaction directly
+                serialized_tx = tx.serialize()
                 send_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.send_raw_transaction,
-                    serialized_tx,
+                    serialized_tx,  # Pass serialized legacy tx
                     opts={
                         "skip_preflight": False,
                         "preflight_commitment": commitment,
@@ -450,10 +444,8 @@ class SolanaClient:
                         self.logger.error(
                             f"Transaction {signature} failed: {status.err}"
                         )
-                        raise TransactionError(
-                            f"Transaction failed confirmation: {status.err}",
-                            tx_signature=signature,
-                        )  # Or a custom exception
+                        # Raise TransactionError with only the message string
+                        raise TransactionError(f"Transaction failed confirmation: {status.err}")
 
                     current_commitment = status.confirmation_status
                     if current_commitment:

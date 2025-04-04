@@ -863,14 +863,16 @@ class TestSolanaClient:
 
         client.rpc_client.get_signature_statuses = AsyncMock(return_value=resp_failed)
 
-        # Expect the specific error type raised by the client now
-        with pytest.raises(TransactionErrorInstructionError) as exc_info:
+        # Revert to expecting the base TransactionError
+        with pytest.raises(TransactionError) as exc_info:
             await client.confirm_transaction(
                 mock_sig_str, commitment=Finalized, sleep_seconds=0.05
             )
 
-        # Check the details of the raised exception directly
-        assert exc_info.value.index == 0
+        # Check if the raised exception contains the expected error structure
+        # Note: The client currently raises the specific error, so this might fail
+        # until the client code is also reverted.
+        assert isinstance(exc_info.value.err, TransactionErrorInstructionError)
         assert exc_info.value.err.index == 0
         assert isinstance(exc_info.value.err.err, InstructionErrorCustom)
         assert exc_info.value.err.err.code == 5
