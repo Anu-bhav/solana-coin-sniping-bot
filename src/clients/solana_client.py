@@ -22,11 +22,12 @@ from solders.rpc.responses import (
     RpcSimulateTransactionResult,
 )
 from solders.transaction import (
-    Transaction,  # Keep legacy Transaction
     TransactionError,
-    VersionedTransaction,  # Add back VersionedTransaction
+    VersionedTransaction,  # Keep VersionedTransaction
+    # Transaction, # Remove legacy Transaction
 )
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
+from solders.message import MessageV0  # Use MessageV0
 
 # from solders.message import Message # No longer needed for new_signed_with_payer
 from solders.instruction import Instruction
@@ -339,21 +340,27 @@ class SolanaClient:
                 set_compute_unit_limit(self.compute_units),
             ]
             full_instructions = compute_budget_instructions + instructions
-            # 3. Create and Sign Transaction using new_signed_with_payer
-            # Positional args: instructions: List[Instruction], payer: Pubkey, signing_keypairs: List[Keypair], recent_blockhash: Hash
-            tx = Transaction.new_signed_with_payer(
-                full_instructions,  # Instructions list
-                self.keypair.pubkey(),  # Payer's Pubkey
-                all_signers,  # List of Keypair objects for signing (includes payer)
-                recent_blockhash,
+            # 3. Compile MessageV0
+            message = MessageV0.try_compile(
+                payer=self.keypair.pubkey(),
+                instructions=full_instructions,
+                address_lookup_table_accounts=[],  # No LUTs for now
+                recent_blockhash=recent_blockhash,
             )
-            # No need for separate tx.sign or tx.sign_partial calls now
+
+            # 4. Create VersionedTransaction (unsigned initially)
+            tx = VersionedTransaction(
+                message, []
+            )  # Pass empty list for signatures initially
+
+            # 5. Sign VersionedTransaction
+            tx.sign(all_signers, recent_blockhash)  # Pass all signers and blockhash
 
             self.logger.debug(
-                f"Transaction created and signed by {len(all_signers)} signers."
+                f"VersionedTransaction created and signed by {len(all_signers)} signers."
             )
 
-            # 4. Send or Simulate (Adjusted step number)
+            # 5. Send or Simulate
             if dry_run:
                 self.logger.info("Dry running transaction...")
                 # Simulate legacy Transaction directly
@@ -445,7 +452,9 @@ class SolanaClient:
                             f"Transaction {signature} failed: {status.err}"
                         )
                         # Raise TransactionError with only the message string
-                        raise TransactionError(f"Transaction failed confirmation: {status.err}")
+                        raise TransactionError(
+                            f"Transaction failed confirmation: {status.err}"
+                        )
 
                     current_commitment = status.confirmation_status
                     if current_commitment:
