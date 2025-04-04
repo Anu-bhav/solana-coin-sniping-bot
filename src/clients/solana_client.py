@@ -17,6 +17,7 @@ from solders.rpc.responses import (
 )
 from solders.transaction import Transaction, TransactionError
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
+from solders.message import Message
 from solders.instruction import Instruction
 
 from solana.rpc.async_api import AsyncClient  # Updated import path
@@ -327,21 +328,33 @@ class SolanaClient:
                 set_compute_unit_limit(self.compute_units),
             ]
             full_instructions = compute_budget_instructions + instructions
-
-            # 3. Create Transaction
-            tx = Transaction(
-                recent_blockhash=recent_blockhash,
-                fee_payer=self.keypair.pubkey(),
-                instructions=full_instructions,
+            # 3. Compile Message (positional arguments: instructions, payer)
+            # The recent_blockhash is associated with the signing process, not the message compilation itself.
+            message = Message(
+                full_instructions,
+                self.keypair.pubkey(),
+                # recent_blockhash is not part of Message constructor
             )
 
-            # 4. Sign Transaction
-            tx.sign(*all_signers)
+            # 4. Create Transaction from Message (signatures added during signing)
+            # Constructor: message, signatures
+            tx = Transaction(
+                message, []
+            )  # Pass message directly, empty list for signatures
+
+            # 5. Sign Transaction (this populates the signatures)
+            # Pass the recent_blockhash here for signing
+            tx.sign(self.keypair, recent_blockhash)  # Sign with fee payer first
+            # Sign with any additional signers
+            for signer in signers:
+                # Pass blockhash for partial signing too
+                tx.sign_partial(signer, recent_blockhash)
+
             self.logger.debug(
                 f"Transaction created and signed by {len(all_signers)} signers."
             )
 
-            # 5. Send or Simulate
+            # 6. Send or Simulate
             if dry_run:
                 self.logger.info("Dry running transaction...")
                 simulation_resp = await self._make_rpc_call_with_retry(
@@ -378,7 +391,7 @@ class SolanaClient:
                 if skip_confirmation:
                     return str(signature)  # Return signature string directly
 
-                # 6. Confirm Transaction (if not skipping)
+                # 7. Confirm Transaction (if not skipping)
                 await self.confirm_transaction(str(signature), commitment=commitment)
                 # Return the original SendTransactionResp which contains the signature
                 return send_resp

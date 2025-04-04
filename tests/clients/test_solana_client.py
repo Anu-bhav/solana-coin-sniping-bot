@@ -700,9 +700,12 @@ class TestSolanaClient:
         # Correct SendTransactionPreflightFailureMessage instantiation (use message=)
         # TransactionError wraps the specific error
         mock_tx_error = TransactionError(mock_instruction_error)
-        # SendTransactionPreflightFailureMessage takes the TransactionError via 'message'
+        # SendTransactionPreflightFailureMessage expects the error *data* structure
+        error_data = {
+            "Err": {"InstructionError": [0, {"Custom": 1}]}
+        }  # Mimic RPC error structure
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            message=mock_tx_error
+            error_data  # Pass the data structure
         )
         mock_exception = RPCException(preflight_failure)
 
