@@ -17,7 +17,6 @@ from solders.rpc.responses import (
     RpcResponseContext,
     SendTransactionResp,
     GetSignatureStatusesResp,
-    # SignatureStatus, # Moved import (Attempt 5)
     # TransactionErrorType, # Moved import
 )
 from solders.transaction import (
@@ -28,15 +27,14 @@ from solders.transaction import (
 import time  # Import time for timeout test
 from solders.hash import Hash
 from solders.signature import Signature
-from solders.transaction_status import SignatureStatus  # Final attempt at import
 
+from solders.transaction_status import SignatureStatus  # Adding correct import
 from solders.instruction import Instruction, AccountMeta
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 
 from solana.rpc.commitment import (
     Confirmed,
     Finalized,
-    # SignatureStatus, # Removed incorrect import from commitment
 )
 
 # Target module for patching
