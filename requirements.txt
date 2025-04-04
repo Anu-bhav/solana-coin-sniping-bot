@@ -42,3 +42,4 @@ yarl==1.18.3
 
 # Testing
 pytest>=7.0.0 # Or a specific recent version
+aioresponses>=0.7.6 # For mocking HTTP requests in tests
