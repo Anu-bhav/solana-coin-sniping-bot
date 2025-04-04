@@ -336,11 +336,9 @@ class SolanaClient:
             full_instructions = compute_budget_instructions + instructions
             # 3. Compile Message (positional arguments: instructions, payer)
             message = Message(full_instructions, self.keypair.pubkey())
-            # 4. Create Transaction object (empty initially)
-            tx = Transaction()
-            # Assign message and blockhash before signing
-            tx.message = message
-            # tx.recent_blockhash = recent_blockhash # Blockhash is needed for signing, not tx creation
+            # 4. Create Transaction using populate static method
+            # Requires message and an initial list of signatures (can be empty)
+            tx = Transaction.populate(message, [])
 
             # 5. Sign Transaction (this populates the signatures and associates blockhash)
             tx.sign(self.keypair, recent_blockhash)  # Sign with fee payer first
