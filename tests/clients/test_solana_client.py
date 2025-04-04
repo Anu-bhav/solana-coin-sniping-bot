@@ -22,6 +22,8 @@ from solders.rpc.responses import (
     RpcConfirmedTransactionStatusWithSignature,  # Import the correct type
     RpcBlockhash,  # Added import
     RpcTokenAccountBalance,  # Import correct type
+    RpcSupply,  # Added import
+    RpcSimulateTransactionResult,  # Added import
     # TransactionErrorType, # Moved import
 )
 from solders.transaction import (
@@ -284,9 +286,12 @@ class TestSolanaClient:
         # Corrected: Pass RpcTokenAmount directly to value
         mock_response = GetTokenSupplyResp(
             context=RpcResponseContext(slot=1),
-            # Corrected: Use RpcTokenAccountBalance for supply value as well (best guess)
-            value=RpcTokenAccountBalance(
-                amount="1000000", decimals=6, ui_amount=1.0, ui_amount_string="1.0"
+            # Corrected: Use RpcSupply
+            value=RpcSupply(
+                total=1000000000000,  # Example value, adjust if needed based on RpcSupply structure
+                circulating=500000000000,
+                non_circulating=500000000000,
+                decimals=6,  # Assuming decimals is part of RpcSupply, adjust if not
             ),
         )
         client.rpc_client.get_token_supply = AsyncMock(return_value=mock_response)
@@ -467,7 +472,8 @@ class TestSolanaClient:
         """Provides a mock successful SimulateTransactionResp."""
         return SimulateTransactionResp(
             context=RpcResponseContext(slot=101),
-            value=SimulateTransactionResp.Value(
+            # Corrected: Use RpcSimulateTransactionResult
+            value=RpcSimulateTransactionResult(
                 err=None,
                 logs=["Log1", "Log2"],
                 accounts=None,
@@ -481,8 +487,11 @@ class TestSolanaClient:
         """Provides a mock failed SimulateTransactionResp."""
         return SimulateTransactionResp(
             context=RpcResponseContext(slot=102),
-            value=SimulateTransactionResp.Value(
-                err=TransactionError(TransactionError.InstructionError(0, 0)),
+            # Corrected: Use RpcSimulateTransactionResult
+            value=RpcSimulateTransactionResult(
+                err=TransactionError(
+                    TransactionError.InstructionError(0, 0)
+                ),  # This error type might also need fixing later
                 logs=["Log1", "Error Log"],
                 accounts=None,
                 units_consumed=5000,
