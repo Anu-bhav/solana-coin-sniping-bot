@@ -19,6 +19,7 @@ from solders.rpc.responses import (
     RpcResponseContext,
     SendTransactionResp,
     GetSignatureStatusesResp,
+    SignatureStatus,  # Added import here
     # TransactionErrorType, # Moved import
 )
 from solders.transaction import (
@@ -29,9 +30,8 @@ from solders.transaction import (
 import time  # Import time for timeout test
 from solders.hash import Hash
 from solders.signature import Signature
-from solana.rpc.responses import (
-    SignatureStatus,
-)
+
+# Removed incorrect import block
 from solders.instruction import Instruction, AccountMeta
 
 # Target module for patching
