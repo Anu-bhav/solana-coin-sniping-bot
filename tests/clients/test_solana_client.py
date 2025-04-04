@@ -27,12 +27,12 @@ from solders.rpc.responses import (
 )
 from solders.account_decoder import UiTokenAmount
 
-# Re-add imports from solders.transaction_status, but remove specific errors
+# Re-add imports from solders.transaction_status, using specific error types
 from solders.transaction_status import (
     TransactionStatus,
     TransactionConfirmationStatus,
-    # InstructionErrorCustom, # Removed
-    # TransactionErrorInstructionError, # Removed
+    InstructionErrorCustom,  # Import specific error type
+    TransactionErrorInstructionError,  # Import wrapper
 )
 from solders.transaction import TransactionError, Transaction
 import time
@@ -96,6 +96,17 @@ async def mock_async_client_gen():
         mock_instance.rpc_url = MOCK_RPC_URL
         mock_instance.commitment = Confirmed
         mock_instance.close = AsyncMock()
+        # Configure methods used in tests
+        mock_instance.get_balance = AsyncMock()
+        mock_instance.get_account_info = AsyncMock()
+        mock_instance.get_latest_blockhash = AsyncMock()
+        mock_instance.get_token_supply = AsyncMock()
+        mock_instance.get_token_account_balance = AsyncMock()
+        mock_instance.get_transaction = AsyncMock()
+        mock_instance.simulate_transaction = AsyncMock()
+        mock_instance.send_raw_transaction = AsyncMock()
+        mock_instance.get_signature_statuses = AsyncMock()
+
         mock_client_factory.return_value = mock_instance
         yield mock_client_factory
 
@@ -139,13 +150,17 @@ def mock_asyncio_sleep():
 @pytest.mark.asyncio
 class TestSolanaClient:
 
+    # Corrected client fixture
     @pytest.fixture
     async def client(self, mock_config, mock_logger, mock_async_client_gen):
         """Fixture to create a SolanaClient instance for testing."""
         from src.clients.solana_client import SolanaClient
 
+        # The patch is active due to mock_async_client_gen fixture
         instance = SolanaClient(mock_config, mock_logger)
-        yield instance
+        # Ensure the mock instance is assigned correctly by the patch
+        assert instance.rpc_client is mock_async_client_gen.return_value
+        yield instance  # Yield the actual SolanaClient instance
 
     # --- Test __init__ ---
 
@@ -204,6 +219,9 @@ class TestSolanaClient:
 
     async def test_close(self, client, mock_async_client_gen, mock_websocket_connect):
         """Tests the close method."""
+        assert hasattr(
+            client, "wss_connection"
+        )  # Check attribute exists before assigning
         client.wss_connection = mock_websocket_connect.mock_protocol
         client.log_subscription_task = AsyncMock()
         client.log_subscription_task.done.return_value = False
@@ -638,8 +656,8 @@ class TestSolanaClient:
         )
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
             TransactionError(mock_instruction_error),
-            logs=[],
-            units_consumed=0,
+            # logs=[], # Removed invalid logs argument
+            # units_consumed=0, # Removed invalid units_consumed argument
         )
         mock_exception = RPCException(preflight_failure)
 
@@ -758,17 +776,17 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        # Use specific importable error type
+        # Use specific importable error type and wrapper
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(5)
         )
-        mock_tx_error = TransactionError(mock_instruction_error)
+        # Pass the wrapper directly to TransactionStatus
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
                 TransactionStatus(
                     slot=10,
-                    err=mock_tx_error,
+                    err=mock_instruction_error,
                     confirmation_status=TransactionConfirmationStatus.Finalized,
                 )
             ],
@@ -781,11 +799,17 @@ class TestSolanaClient:
                 mock_sig_str, commitment=Finalized, sleep_seconds=0.05
             )
 
-        assert exc_info.match(f"Transaction failed confirmation: {mock_tx_error}")
+        # Check if the raised exception contains the expected error structure
+        # This might need adjustment based on how TransactionError wraps things
+        assert isinstance(exc_info.value.err, TransactionErrorInstructionError)
+        assert exc_info.value.err.index == 0
+        assert isinstance(exc_info.value.err.err, InstructionErrorCustom)
+        assert exc_info.value.err.err.code == 5
+
         assert client.rpc_client.get_signature_statuses.await_count == 1
         assert mock_asyncio_sleep.await_count == 0
         client.logger.error.assert_called_with(
-            f"Transaction {mock_sig_str} failed: {mock_tx_error}"
+            f"Transaction {mock_sig_str} failed: {mock_instruction_error}"
         )
 
     async def test_confirm_transaction_timeout(self, client, mock_asyncio_sleep):
