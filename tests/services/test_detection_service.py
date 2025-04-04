@@ -26,9 +26,9 @@ from solders.signature import Signature
 # Import the class to test
 from src.services.detection_service import DetectionService
 from src.clients.solana_client import SolanaClient  # Needed for type hinting mocks
-from src.database.database_manager import (
+from src.database.manager import (
     DatabaseManager,
-)  # Needed for type hinting mocks
+)  # Corrected import path
 
 # --- Test Fixtures ---
 

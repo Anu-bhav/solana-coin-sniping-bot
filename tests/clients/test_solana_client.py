@@ -17,17 +17,28 @@ from solders.rpc.responses import (
     RpcResponseContext,
     SendTransactionResp,
     GetSignatureStatusesResp,
-    # SignatureStatus, # Moved import
-    TransactionErrorType,
+    SignatureStatus,  # Re-adding import here
+    # TransactionErrorType, # Moved import
 )
-from solders.transaction import TransactionError, Transaction
+from solders.transaction import (
+    TransactionError,
+    Transaction,
+    # TransactionErrorType, # Accessed via TransactionError
+)
 import time  # Import time for timeout test
 from solders.hash import Hash
 from solders.signature import Signature
-from solders.transaction_status import SignatureStatus  # Added correct import
+
+# from solders.transaction_status import SignatureStatus # Removed incorrect import (Attempt 3)
 from solders.instruction import Instruction, AccountMeta
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
-from solana.rpc.commitment import Confirmed, Finalized
+
+# from solana.rpc.types import SignatureStatus # Removed incorrect import (Attempt 3)
+from solana.rpc.commitment import (
+    Confirmed,
+    Finalized,
+    SignatureStatus,
+)  # Added correct import
 
 # Target module for patching
 TARGET_MODULE = "src.clients.solana_client"
@@ -470,7 +481,7 @@ class TestSolanaClient:
         return SimulateTransactionResp(
             context=RpcResponseContext(slot=102),
             value=SimulateTransactionResp.Value(
-                err=TransactionError(TransactionErrorType.InstructionError(0, 0)),
+                err=TransactionError(TransactionError.InstructionError(0, 0)),
                 logs=["Log1", "Error Log"],
                 accounts=None,
                 units_consumed=5000,
@@ -681,9 +692,7 @@ class TestSolanaClient:
         """Tests handling of TransactionError (like preflight failure) during sending."""
         # Simulate a preflight failure wrapped in errors.RPCException
         preflight_failure = errors.SendTransactionPreflightFailureMessage(
-            TransactionError(
-                TransactionErrorType.InstructionError(0, 1)
-            ),  # Example error
+            TransactionError(TransactionError.InstructionError(0, 1)),  # Example error
             logs=[],
             units_consumed=0,
         )
@@ -814,7 +823,7 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        mock_tx_error = TransactionError(TransactionErrorType.InstructionError(0, 5))
+        mock_tx_error = TransactionError(TransactionError.InstructionError(0, 5))
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[

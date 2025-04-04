@@ -11,16 +11,14 @@ from solders.transaction_status import (
 from solders.signature import Signature
 
 from src.clients.solana_client import SolanaClient
-from src.database.database_manager import DatabaseManager
-from src.core.logger import setup_logger  # Assuming logger setup function
+from src.database.manager import DatabaseManager  # Corrected import path
+from src.core.logger import get_logger  # Corrected import
 
 # Assuming config is loaded elsewhere and passed as an object or dict
 # from src.config import Config
 
 # Configure logger for this service
-logger = setup_logger(
-    __name__, level=logging.INFO
-)  # Or get logger instance differently
+logger = get_logger(__name__)  # Use get_logger instead of setup_logger
 
 
 class DetectionService:
