@@ -700,9 +700,9 @@ class TestSolanaClient:
         # Correct SendTransactionPreflightFailureMessage instantiation (use message=)
         # TransactionError wraps the specific error
         mock_tx_error = TransactionError(mock_instruction_error)
-        # SendTransactionPreflightFailureMessage takes the TransactionError positionally as 'message'
+        # SendTransactionPreflightFailureMessage takes the TransactionError via the 'message' keyword argument
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            mock_tx_error  # Pass the TransactionError object positionally
+            message=mock_tx_error  # Pass the TransactionError object using the keyword
         )
         # Wrap the specific preflight failure message in the generic RPCException
         mock_exception = RPCException(preflight_failure)
