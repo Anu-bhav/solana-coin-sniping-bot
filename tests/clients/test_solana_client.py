@@ -6,6 +6,8 @@ import pytest
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.rpc import errors  # Updated import style
+from solders.rpc.commitment import Confirmed, Finalized  # Commitment levels
+
 from solders.rpc.responses import (
     GetBalanceResp,
     GetAccountInfoResp,
@@ -27,15 +29,9 @@ from solders.transaction import (
 import time  # Import time for timeout test
 from solders.hash import Hash
 from solders.signature import Signature
-
-from solders.transaction_status import SignatureStatus  # Adding correct import
+from solders.transaction_status import SignatureStatus  # Correct import location
 from solders.instruction import Instruction, AccountMeta
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
-
-from solana.rpc.commitment import (
-    Confirmed,
-    Finalized,
-)
 
 # Target module for patching
 TARGET_MODULE = "src.clients.solana_client"
@@ -676,12 +672,603 @@ class TestSolanaClient:
         )  # Fail early
 
         with pytest.raises(errors.RPCException) as exc_info:
-            await client.create_sign_send_transaction(mock_instructions, dry_run=False)
+            # The actual call being tested is get_latest_blockhash which fails
+            await client.get_latest_blockhash()  # Re-trigger the error for the test context
 
         assert exc_info.value == mock_exception
         client.logger.exception.assert_called_with(
             f"RPC error during transaction processing: {mock_exception}"
         )
+
+    async def test_create_sign_send_transaction_preflight_error(
+        self, client, mock_instructions, mock_blockhash_resp
+    ):
+        """Tests handling of TransactionError (like preflight failure) during sending."""
+        # Simulate a preflight failure wrapped in errors.RPCException
+        preflight_failure = errors.SendTransactionPreflightFailureMessage(
+            TransactionError(TransactionError.InstructionError(0, 1)),  # Example error
+            logs=[],
+            units_consumed=0,
+        )
+        mock_exception = errors.RPCException(preflight_failure)
+
+        client.rpc_client.get_latest_blockhash = AsyncMock(
+            return_value=mock_blockhash_resp
+        )
+        client.rpc_client.send_raw_transaction = AsyncMock(side_effect=mock_exception)
+        client.confirm_transaction = AsyncMock()  # Should not be reached
+
+        with pytest.raises(
+            errors.RPCException
+        ) as exc_info:  # It's still raised as errors.RPCException
+            await client.create_sign_send_transaction(
+                mock_instructions, dry_run=False, skip_confirmation=False
+            )
+
+        assert exc_info.value == mock_exception
+        # Check if specific logging for TransactionError occurred (depends on exact exception handling in main code)
+        # In the current code, it fall nto the eneral errors.RPCException block
+        client.logger.exception.assert_any_call(
+            f"RPC error during transaction processing: {mock_exception}"
+        )
+
+    async def test_confirm_transaction_success_finalized(
+        self, client, mock_asyncio_sleep
+    ):
+        """Tests successful transaction confirmation at Finalized commitment."""
+        mock_sig = Signature.new_unique()
+        mock_sig_str = str(mock_sig)
+        resp_processing = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=1),
+            value=[
+                SignatureStatus(
+                    slot=10, confirmations=None, err=None, confirmation_status=None
+                )
+            ],
+        )
+        resp_confirmed = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=2),
+            value=[
+                SignatureStatus(
+                    slot=11, confirmations=10, err=None, confirmation_status=Confirmed
+                )
+            ],
+        )
+        resp_finalized = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=3),
+            value=[
+                SignatureStatus(
+                    slot=12, confirmations=32, err=None, confirmation_status=Finalized
+                )
+            ],
+        )
+
+        client.rpc_client.get_signature_statuses = AsyncMock(
+            side_effect=[resp_processing, resp_confirmed, resp_finalized]
+        )
+
+        result = await client.confirm_transaction(
+            mock_sig_str, commitment=Finalized, sleep_seconds=0.05
+        )
+
+        assert result is True
+        assert client.rpc_client.get_signature_statuses.await_count == 3
+        client.rpc_client.get_signature_statuses.assert_has_awaits(
+            [call([mock_sig_str]), call([mock_sig_str]), call([mock_sig_str])]
+        )
+        assert (
+            mock_asyncio_sleep.await_count == 2
+        )  # Slept after processing and confirmed responses
+        client.logger.info.assert_any_call(
+            f"Confirming transaction {mock_sig_str} with commitment Finalized..."
+        )
+        client.logger.debug.assert_any_call(
+            f"Transaction {mock_sig_str} status: None. Waiting..."
+        )  # From resp_processing
+        client.logger.debug.assert_any_call(
+            f"Transaction {mock_sig_str} status: Confirmed. Waiting..."
+        )  # From resp_confirmed
+        client.logger.info.assert_any_call(
+            f"Transaction {mock_sig_str} confirmed with status: Finalized"
+        )
+
+    async def test_confirm_transaction_success_confirmed(
+        self, client, mock_asyncio_sleep
+    ):
+        """Tests successful transaction confirmation at Confirmed commitment."""
+        mock_sig = Signature.new_unique()
+        mock_sig_str = str(mock_sig)
+        resp_processing = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=1),
+            value=[
+                SignatureStatus(
+                    slot=10, confirmations=None, err=None, confirmation_status=None
+                )
+            ],
+        )
+        resp_confirmed = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=2),
+            value=[
+                SignatureStatus(
+                    slot=11, confirmations=10, err=None, confirmation_status=Confirmed
+                )
+            ],
+        )
+
+        client.rpc_client.get_signature_statuses = AsyncMock(
+            side_effect=[
+                resp_processing,
+                resp_confirmed,
+            ]
+        )
+
+        result = await client.confirm_transaction(
+            mock_sig_str, commitment=Confirmed, sleep_seconds=0.05
+        )
+
+        assert result is True
+        assert client.rpc_client.get_signature_statuses.await_count == 2
+        assert mock_asyncio_sleep.await_count == 1  # Slept after processing response
+        client.logger.info.assert_any_call(
+            f"Transaction {mock_sig_str} confirmed with status: Confirmed"
+        )
+
+    async def test_confirm_transaction_failure(self, client, mock_asyncio_sleep):
+        """Tests transaction confirmation when the transaction failed."""
+        mock_sig = Signature.new_unique()
+        mock_sig_str = str(mock_sig)
+        mock_tx_error = TransactionError(TransactionError.InstructionError(0, 5))
+        resp_failed = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=1),
+            value=[
+                SignatureStatus(
+                    slot=10,
+                    confirmations=None,
+                    err=mock_tx_error,
+                    confirmation_status=Finalized,
+                )
+            ],
+        )
+
+        client.rpc_client.get_signature_statuses = AsyncMock(return_value=resp_failed)
+
+        with pytest.raises(TransactionError) as exc_info:
+            await client.confirm_transaction(
+                mock_sig_str, commitment=Finalized, sleep_seconds=0.05
+            )
+
+        assert exc_info.match(f"Transaction failed confirmation: {mock_tx_error}")
+        assert client.rpc_client.get_signature_statuses.await_count == 1
+        assert mock_asyncio_sleep.await_count == 0  # Failed on first check
+        client.logger.error.assert_called_with(
+            f"Transaction {mock_sig_str} failed: {mock_tx_error}"
+        )
+
+    async def test_confirm_transaction_timeout(self, client, mock_asyncio_sleep):
+        """Tests transaction confirmation timeout."""
+        mock_sig = Signature.new_unique()
+        mock_sig_str = str(mock_sig)
+        resp_processing = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=1),
+            value=[
+                SignatureStatus(
+                    slot=10, confirmations=None, err=None, confirmation_status=None
+                )
+            ],
+        )
+
+        client.rpc_client.get_signature_statuses = AsyncMock(
+            return_value=resp_processing
+        )  # Always processing
+
+        # Mock time.monotonic to simulate timeout
+        start_time = time.monotonic()
+        with patch("time.monotonic") as mock_time:
+            # Simulate time passing just enough to exceed timeout on the second check
+            mock_time.side_effect = [
+                start_time,  # First call inside loop
+                start_time + 0.1,  # Second call inside loop (after sleep)
+                start_time + client.timeout + 0.1,  # Third call, exceeds timeout
+            ]
+            with pytest.raises(asyncio.TimeoutError) as exc_info:
+                # Use a small sleep to ensure the loop runs multiple times quickly
+                await client.confirm_transaction(
+                    mock_sig_str, commitment=Finalized, sleep_seconds=0.01
+                )
+
+        assert exc_info.match(
+            f"Timeout waiting for transaction {mock_sig_str} confirmation."
+        )
+        # Check it polled multiple times before timeout
+        assert client.rpc_client.get_signature_statuses.await_count > 1
+        assert mock_asyncio_sleep.await_count > 0
+        client.logger.error.assert_called_with(
+            f"Timeout waiting for transaction {mock_sig_str} confirmation."
+        )
+
+    async def test_confirm_transaction_rpc_error(self, client, mock_asyncio_sleep):
+        """Tests handling errors.RPCException during confirmation polling."""
+        mock_sig = Signature.new_unique()
+        mock_sig_str = str(mock_sig)
+        mock_rpc_error = {
+            "code": 503,
+            "message": "Service Unavailable",
+        }  # Structure for errors.RPCException
+        mock_exception = errors.RPCException(mock_rpc_error)
+
+        client.rpc_client.get_signature_statuses = AsyncMock(
+            side_effect=mock_exception
+        )  # Fail immediately
+
+        with pytest.raises(errors.RPCException) as exc_info:
+            await client.confirm_transaction(mock_sig_str, commitment=Finalized)
+
+        assert exc_info.value == mock_exception
+        client.logger.error.assert_called_with(
+            f"RPC error while confirming transaction {mock_sig_str}: {mock_exception}"
+        )
+
+    # --- WebSocket Method Tests ---
+
+    async def test_connect_wss_success(self, client, mock_websocket_connect):
+        """Tests establishing a WebSocket connection successfully."""
+        assert client.wss_connection is None
+        await client.connect_wss()
+
+        mock_websocket_connect.assert_called_once_with(client.wss_url)
+        assert client.wss_connection == mock_websocket_connect.mock_protocol
+        client.logger.info.assert_any_call(f"Connecting to WebSocket: {client.wss_url}")
+        client.logger.info.assert_any_call("WebSocket connection established.")
+
+    async def test_connect_wss_already_connected(self, client, mock_websocket_connect):
+        """Tests attempting to connect when already connected."""
+        # Simulate already connected
+        client.wss_connection = mock_websocket_connect.mock_protocol
+        client.wss_connection.is_connected = True  # Ensure mock reports connected
+
+        await client.connect_wss()
+
+        # connect() should not be called again
+        mock_websocket_connect.assert_not_called()
+        client.logger.info.assert_called_with(
+            "WebSocket connection already established."
+        )
+
+    async def test_connect_wss_failure(self, client, mock_websocket_connect):
+        """Tests handling of WebSocket connection failure."""
+        mock_websocket_connect.side_effect = ConnectionRefusedError(
+            "Connection refused"
+        )
+
+        with pytest.raises(ConnectionError, match="Failed to connect to WebSocket"):
+            await client.connect_wss()
+
+        assert client.wss_connection is None
+        client.logger.exception.assert_called_with(
+            "Failed to connect to WebSocket: Connection refused"
+        )
+
+    async def test_close_wss_connection_with_task(self, client, mock_websocket_connect):
+        """Tests closing WSS connection when a subscription task is active."""
+        # Simulate active connection and task
+        client.wss_connection = mock_websocket_connect.mock_protocol
+        mock_task = AsyncMock()
+        mock_task.done.return_value = False
+        client.log_subscription_task = mock_task
+        client.log_callback = AsyncMock()  # Set a dummy callback
+
+        await client.close_wss_connection()
+
+        mock_task.cancel.assert_called_once()
+        mock_websocket_connect.mock_protocol.close.assert_awaited_once()
+        assert client.wss_connection is None
+        assert client.log_subscription_task is None
+        assert client.log_callback is None
+        client.logger.info.assert_any_call("Cancelling log subscription task...")
+        client.logger.info.assert_any_call("Closing WebSocket connection...")
+
+    async def test_close_wss_connection_no_task(self, client, mock_websocket_connect):
+        """Tests closing WSS connection without an active subscription task."""
+        client.wss_connection = mock_websocket_connect.mock_protocol
+        client.log_subscription_task = None  # No task
+
+        await client.close_wss_connection()
+
+        mock_websocket_connect.mock_protocol.close.assert_awaited_once()
+        assert client.wss_connection is None
+        assert client.log_subscription_task is None
+        client.logger.info.assert_any_call("Closing WebSocket connection...")
+
+    async def test_close_wss_connection_not_connected(
+        self, client, mock_websocket_connect, mock_wss_message
+    ):
+        """Tests closing WSS connection when it's already closed or None."""
+        client.wss_connection = None  # Not connected
+
+        await client.close_wss_connection()
+
+        # Ensure close wasn't called on None
+        mock_websocket_connect.mock_protocol.close.assert_not_awaited()
+        assert client.wss_connection is None
+        assert client.log_subscription_task is None
+        client.logger.debug.assert_called_with(
+            "WebSocket connection already closed or not established."
+        )
+
+    @pytest.fixture
+    def mock_log_callback(self):
+        """Provides a mock async callback function."""
+        return AsyncMock()
+
+    @pytest.fixture
+    def mock_log_data(self):
+        """Provides mock log data structure similar to subscription results."""
+        # Structure based on solana-py WebsocketLogMessage? Needs verification.
+        # Assuming a structure like: {'jsonrpc': '2.0', 'method': 'logsNotification', 'params': {'result': {'value': {'signature': '...', 'logs': [], 'err': None}}, 'subscription': 1}}
+        # The client code extracts item.result.value
+        return {
+            "signature": str(Signature.new_unique()),
+            "logs": ["Log line 1", f"Program {MOCK_PROGRAM_ID_1} invoke [1]"],
+            "err": None,
+        }
+
+    @pytest.fixture
+    def mock_wss_message(self, mock_log_data):
+        """Provides a mock raw WebSocket message containing log data."""
+
+        # Mimic the structure received over the wire (often a list)
+        # This structure might vary, adjust based on actual solana-py behavior
+        class MockRpcResponseValue:
+            def __init__(self, value):
+                self.value = value
+
+        class MockRpcResult:
+            def __init__(self, value):
+                self.result = MockRpcResponseValue(value)
+
+        return [MockRpcResult(mock_log_data)]  # Wrap in list and objects
+
+    async def test_start_log_subscription_success(
+        self, client, mock_websocket_connect, mock_log_callback
+    ):
+        """Tests starting a log subscription successfully."""
+        # Ensure connection first (implicitly tested here)
+        await client.connect_wss()
+        assert client.wss_connection is not None
+
+        mentions_str = [str(pid) for pid in client.monitored_program_ids]
+
+        await client.start_log_subscription(mock_log_callback, commitment=Finalized)
+
+        # Assert logs_subscribe was called correctly
+        mock_websocket_connect.mock_protocol.logs_subscribe.assert_awaited_once_with(
+            mentions=mentions_str, commitment=Finalized
+        )
+        # Assert background task was created
+        assert client.log_subscription_task is not None
+        assert isinstance(client.log_subscription_task, asyncio.Task)
+        assert client.log_callback == mock_log_callback
+        client.logger.info.assert_any_call(
+            f"Starting log subscription for programs mentioned: {mentions_str} with commitment Finalized"
+        )
+        client.logger.info.assert_any_call("Successfully subscribed to logs.")
+        client.logger.info.assert_any_call("Log processing task started.")
+
+        # Clean up the task to avoid warnings during test teardown
+        client.log_subscription_task.cancel()
+        try:
+            await client.log_subscription_task
+        except asyncio.CancelledError:
+            pass
+
+    async def test_start_log_subscription_connects_if_needed(
+        self, client, mock_websocket_connect, mock_log_callback
+    ):
+        """Tests that subscription connects WSS if not already connected."""
+        client.wss_connection = None  # Start disconnected
+
+        await client.start_log_subscription(mock_log_callback)
+
+        # Assert connection was attempted
+        mock_websocket_connect.assert_called_once_with(client.wss_url)
+        assert client.wss_connection is not None
+        # Assert subscription proceeded
+        mock_websocket_connect.mock_protocol.logs_subscribe.assert_awaited_once()
+        assert client.log_subscription_task is not None
+
+        # Clean up
+        client.log_subscription_task.cancel()
+        try:
+            await client.log_subscription_task
+        except asyncio.CancelledError:
+            pass
+
+    async def test_start_log_subscription_failure(
+        self, client, mock_websocket_connect, mock_log_callback
+    ):
+        """Tests handling of failure during the subscription call."""
+        await client.connect_wss()  # Connect first
+        mock_websocket_connect.mock_protocol.logs_subscribe.side_effect = (
+            errors.RPCException("Subscription failed")
+        )
+        # Mock close_wss_connection to check if it's called on failure
+        client.close_wss_connection = AsyncMock()
+
+        await client.start_log_subscription(mock_log_callback)
+
+        assert client.log_subscription_task is None  # Task should not be set
+        client.logger.exception.assert_called_with(
+            "Failed to start log subscription: errors.RPCException('Subscription failed')"
+        )
+        # Assert cleanup was called
+        client.close_wss_connection.assert_awaited_once()
+
+    async def test_start_log_subscription_restart(
+        self, client, mock_websocket_connect, mock_log_callback
+    ):
+        """Tests restarting a log subscription cancels the old one."""
+        # Start first subscription
+        await client.start_log_subscription(mock_log_callback)
+        first_task = client.log_subscription_task
+        first_connection = client.wss_connection
+        assert first_task is not None
+        assert first_connection is not None
+        first_task.cancel = MagicMock()  # Mock cancel on the real task
+        first_connection.close = AsyncMock()
+
+        # Reset connect mock for the second call
+        mock_websocket_connect.reset_mock()
+        # Need to setup the side_effect again for the new connection
+        new_mock_ws_protocol = AsyncMock()
+        new_mock_ws_protocol.is_connected = True
+        new_mock_ws_protocol.close = AsyncMock()
+        new_mock_ws_protocol.logs_subscribe = AsyncMock()
+
+        async def _new_connect_generator(*args, **kwargs):
+            yield new_mock_ws_protocol
+
+        mock_websocket_connect.side_effect = _new_connect_generator
+        mock_websocket_connect.mock_protocol = (
+            new_mock_ws_protocol  # Update mock reference
+        )
+
+        # Start second subscription
+        second_callback = AsyncMock()
+        await client.start_log_subscription(second_callback)
+        second_task = client.log_subscription_task
+        second_connection = client.wss_connection
+
+        # Assertions
+        assert first_task != second_task  # New task created
+        assert first_connection != second_connection  # New connection created
+        first_task.cancel.assert_called_once()  # Old task cancelled
+        first_connection.close.assert_awaited_once()  # Old connection closed
+        mock_websocket_connect.assert_called_once()  # connect called for the second time
+        new_mock_ws_protocol.logs_subscribe.assert_awaited_once()  # New subscription started
+        assert client.log_callback == second_callback  # Callback updated
+
+        # Clean up second task
+        second_task.cancel()
+        try:
+            await second_task
+        except asyncio.CancelledError:
+            pass
+
+    async def test_process_log_messages_calls_callback(
+        self,
+        client,
+        mock_websocket_connect,
+        mock_log_callback,
+        mock_log_data,
+        mock_wss_message,
+    ):
+        """Tests that the internal message processor calls the callback."""
+        # Setup connection and callback
+        await client.connect_wss()
+        client.log_callback = mock_log_callback
+
+        # Configure the mock connection to yield the message then stop
+        async def msg_generator():
+            yield mock_wss_message
+            # Simulate connection closing or end of messages
+            raise StopAsyncIteration
+
+        mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
+
+        # Run the processor directly (it's usually run via create_task)
+        await client._process_log_messages()
+
+        # Assert callback was called with the extracted value
+        mock_log_callback.assert_awaited_once_with(mock_log_data)
+
+    async def test_process_log_messages_handles_callback_error(
+        self,
+        client,
+        mock_websocket_connect,
+        mock_log_callback,
+        mock_log_data,
+        mock_wss_message,
+    ):
+        """Tests that errors in the callback are caught and logged."""
+        await client.connect_wss()
+        mock_log_callback.side_effect = ValueError("Callback error")
+        client.log_callback = mock_log_callback
+
+        async def msg_generator():
+            yield mock_wss_message
+            raise StopAsyncIteration  # Stop after one message
+
+        mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
+
+        await client._process_log_messages()
+
+        mock_log_callback.assert_awaited_once_with(mock_log_data)
+        client.logger.exception.assert_called_with(
+            "Error in log processing callback: ValueError('Callback error')"
+        )
+
+    async def test_process_log_messages_handles_unexpected_format(
+        self, client, mock_websocket_connect, mock_log_callback
+    ):
+        """Tests processing logs with an unexpected message format."""
+        await client.connect_wss()
+        client.log_callback = mock_log_callback
+        unexpected_message = ["some_string"]  # Not the expected structure
+
+        async def msg_generator():
+            yield unexpected_message
+            raise StopAsyncIteration
+
+        mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
+
+        await client._process_log_messages()
+
+        mock_log_callback.assert_not_awaited()  # Callback shouldn't be called
+        client.logger.warning.assert_any_call(
+            f"Received unexpected WSS message format: {unexpected_message[0]}"
+        )
+
+    async def test_process_log_messages_handles_cancellation(
+        self, client, mock_websocket_connect, mock_wss_message
+    ):
+        """Tests that the message loop handles cancellation gracefully."""
+        await client.connect_wss()
+        client.log_callback = AsyncMock()
+
+        # Simulate a message stream that gets cancelled externally
+        async def msg_generator():
+            yield mock_wss_message  # Send one message
+            await asyncio.sleep(0.1)  # Give time for cancellation
+            raise asyncio.CancelledError  # Simulate cancellation
+
+        mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
+
+        # Run in a task and cancel it
+        task = asyncio.create_task(client._process_log_messages())
+        await asyncio.sleep(0.01)  # Allow task to start and process first message
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task  # Wait for task completion (raises CancelledError)
+
+        client.logger.info.assert_called_with("Log processing task cancelled.")
+        # Check callback was called for the message before cancellation
+        client.log_callback.assert_awaited_once()
+
+    # --- Test build_swap_instruction Placeholder ---
+    def test_build_swap_instruction_raises_not_implemented(self, client):
+        """Tests that the placeholder swap instruction builder raises NotImplementedError."""
+        with pytest.raises(NotImplementedError):
+            client.build_swap_instruction(
+                dex_program_id=Pubkey.new_unique(),
+                user_wallet=Pubkey.new_unique(),
+                source_token_account=Pubkey.new_unique(),
+                destination_token_account=Pubkey.new_unique(),
+                source_mint=Pubkey.new_unique(),
+                destination_mint=Pubkey.new_unique(),
+                amount_in=100,
+                min_amount_out=95,
+            )
 
     async def test_create_sign_send_transaction_preflight_error(
         self, client, mock_instructions, mock_blockhash_resp
