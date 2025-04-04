@@ -14,19 +14,21 @@ from solders.rpc.responses import (
 from solders.transaction_status import (
     EncodedTransactionWithStatusMeta,
     UiTransactionEncoding,
-    UiTransactionStatusMeta,  # Renamed from TransactionStatusMeta
+    UiTransactionStatusMeta,
     UiTransaction,
     UiMessage,
     UiInnerInstructions,
-    # TransactionError, # Moved import
+    AccountInUse,
+    InstructionError,
+    TransactionErrorInstructionError,  # Add missing wrapper import
 )
-from solders.transaction import TransactionError  # Added correct import
+from solders.transaction import TransactionError
 from solders.signature import Signature
 
 # Import the class to test
 from src.services.detection_service import DetectionService
 from src.clients.solana_client import SolanaClient  # Needed for type hinting mocks
-from src.database.manager import (  # Already corrected in source, correcting here for test context
+from src.database.manager import (
     DatabaseManager,
 )
 
@@ -262,9 +264,12 @@ class TestDetectionService:
     ):
         """Test that logs from failed transactions are ignored."""
         sig = Signature.new_unique()
-        mock_notification = create_mock_log_notification(
-            sig, ["Log 1"], err=TransactionError.AccountInUse  # Assume nested structure
+        # Use correct error structure based on documentation
+        # Assuming index 0 for the instruction causing the error
+        mock_error = TransactionError(
+            TransactionErrorInstructionError(0, AccountInUse())
         )
+        mock_notification = create_mock_log_notification(sig, ["Log 1"], err=mock_error)
 
         await detection_service._handle_log_message(mock_notification)
 
