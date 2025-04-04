@@ -1,7 +1,5 @@
 import pytest
-import os
-import tempfile
-import shutil
+
 
 @pytest.fixture(scope="function")
 def temp_config_file(tmp_path):
@@ -117,9 +115,10 @@ advanced: # Add a minimal advanced section if needed by model
     # Use tmp_path directly
     config_path = tmp_path / "config.test.yml"
     config_path.write_text(config_content)
-    print(f"\nCreated temp config: {config_path}") # Debug print
+    print(f"\nCreated temp config: {config_path}")  # Debug print
     yield str(config_path)
     # Cleanup handled by pytest tmp_path fixtures
+
 
 @pytest.fixture(scope="function")
 def temp_env_file(tmp_path):
@@ -140,16 +139,17 @@ HELIUS_API_KEY=env_helius_key
     # Use tmp_path directly
     env_path = tmp_path / ".env.test"
     env_path.write_text(env_content)
-    print(f"\nCreated temp env: {env_path}") # Debug print
+    print(f"\nCreated temp env: {env_path}")  # Debug print
     yield str(env_path)
     # Cleanup handled by pytest tmp_path fixtures
+
 
 # You might need a fixture to set APP_ENV for the duration of tests
 # if load_configuration relies on it to find the default .env file
 @pytest.fixture(autouse=True)
 def set_test_env(monkeypatch):
     """Set APP_ENV to development for tests if needed."""
-    monkeypatch.setenv("APP_ENV", "development") # Or parameterize if needed
+    monkeypatch.setenv("APP_ENV", "development")  # Or parameterize if needed
     # Ensure conflicting real env vars are cleared if they could interfere
     # Example:
     # if "SNIPEROO_API_KEY" in os.environ:

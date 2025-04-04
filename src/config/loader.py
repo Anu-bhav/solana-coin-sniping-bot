@@ -39,7 +39,9 @@ def load_configuration(
         if env_path:
             # Use provided env_path directly
             if not os.path.exists(env_path):
-                logger.warning(f"Provided environment file '{env_path}' not found. Relying on system env vars.")
+                logger.warning(
+                    f"Provided environment file '{env_path}' not found. Relying on system env vars."
+                )
                 load_dotenv()
             else:
                 load_dotenv(dotenv_path=env_path)
@@ -66,12 +68,16 @@ def load_configuration(
                 config_yaml = yaml.safe_load(f)
                 logger.info(f"Loaded base configuration from: {config_path}")
             except yaml.YAMLError as e:
-                logger.error(f"Error parsing YAML file '{config_path}': {e}", exc_info=True)
+                logger.error(
+                    f"Error parsing YAML file '{config_path}': {e}", exc_info=True
+                )
                 raise
 
         # 4. Prepare data for Pydantic model (merge env vars conceptually)
         # Start with the loaded YAML content
-        config_data = config_yaml.copy()  # Use a copy to avoid modifying the original dict
+        config_data = (
+            config_yaml.copy()
+        )  # Use a copy to avoid modifying the original dict
 
         # Load specific env vars that override
         # Check for specific known env vars first (like keys/RPCs)
@@ -129,17 +135,23 @@ def load_configuration(
             # This is a simplified approach. A robust solution might inspect the Pydantic model.
             try:
                 # Simple type guessing
-                if value.lower() == 'true': value = True
-                elif value.lower() == 'false': value = False
-                elif value.isdigit(): value = int(value)
-                elif '.' in value and all(c.isdigit() or c == '.' for c in value): value = float(value)
+                if value.lower() == "true":
+                    value = True
+                elif value.lower() == "false":
+                    value = False
+                elif value.isdigit():
+                    value = int(value)
+                elif "." in value and all(c.isdigit() or c == "." for c in value):
+                    value = float(value)
             except AttributeError:  # Value is not a string
                 pass
             d[keys[-1]] = value
 
         for key, value in os.environ.items():
             if key.startswith(env_prefix):
-                parts = key[len(env_prefix):].lower().split('__')  # e.g., APP_GENERAL__LOG_LEVEL -> ['general', 'log_level']
+                parts = (
+                    key[len(env_prefix) :].lower().split("__")
+                )  # e.g., APP_GENERAL__LOG_LEVEL -> ['general', 'log_level']
                 if parts:
                     set_nested_value(config_data, parts, value)
 
@@ -205,7 +217,8 @@ def load_configuration(
         raise
     except Exception as e:
         logger.error(
-            f"An unexpected error occurred during configuration loading: {e}", exc_info=True
+            f"An unexpected error occurred during configuration loading: {e}",
+            exc_info=True,
         )
         return None
 

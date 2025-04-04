@@ -1,6 +1,5 @@
 import asyncpg
 from typing import Optional, List, Dict
-from datetime import datetime
 
 
 class DatabaseManager:

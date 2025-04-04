@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Literal, Optional, Dict, List
+from typing import Literal, Optional, Dict
 import aiohttp
 from aiohttp import ClientSession, ClientResponse
 
@@ -121,7 +121,7 @@ class ResilientHTTPClient:
                 await self.circuit_breaker.record_success()
                 return response
 
-        except Exception as e:
+        except Exception:
             if retries < self.config["rate_limit"]["max_retries"]:
                 backoff = self.config["rate_limit"]["backoff_factor"] ** retries
                 await asyncio.sleep(backoff)

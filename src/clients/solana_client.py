@@ -3,7 +3,7 @@ import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass
-from typing import Optional, Tuple, Type, AsyncGenerator
+from typing import Optional, Tuple, AsyncGenerator
 from solders.keypair import Keypair
 from solders.transaction import Transaction
 from solders.rpc.responses import SendTransactionResp
@@ -11,10 +11,8 @@ from solders.signature import Signature
 from solders.message import Message
 from solders.instruction import Instruction
 from solders.compute_budget import set_compute_unit_price, set_compute_unit_limit
-from solders.rpc.requests import GetTransactionReq
-from solders.rpc.config import RpcTransactionConfig
 import httpx
-from websockets.client import connect, WebSocketClientProtocol
+from websockets.client import WebSocketClientProtocol
 
 from config import load_config
 

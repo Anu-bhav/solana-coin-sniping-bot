@@ -1,8 +1,7 @@
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 from typing import Dict, Any
 import asyncio
-import aiohttp
 
 from src.clients.http_client import ResilientHTTPClient, CircuitBreaker
 

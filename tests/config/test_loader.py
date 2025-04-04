@@ -7,10 +7,11 @@ from pydantic import ValidationError
 from src.config.loader import load_configuration
 from src.core.models import AppConfig
 
+
 # Helper to create temp env file
 @pytest.fixture
 def temp_env_file(tmp_path):
-    env_content = '''
+    env_content = """
 # Minimal Dev Env
 APP_WALLET__DEV_PRIVATE_KEY=[1,2,3]
 APP_RPC__DEVNET_HTTP_URL=http://dev.rpc
@@ -18,29 +19,31 @@ APP_RPC__DEVNET_WSS_URL=ws://dev.rpc
 
 # Optional keys for testing override
 APP_API_KEYS__HELIUS_API_KEY=env_helius_key
-'''
+"""
     env_path = tmp_path / ".env.test"
     env_path.write_text(env_content)
     return str(env_path)
 
+
 # Helper to create temp PROD env file
 @pytest.fixture
 def temp_prod_env_file(tmp_path):
-    env_content = '''
+    env_content = """
 # Minimal Prod Env
 PROD_WALLET_PRIVATE_KEY=[4,5,6] # Use a different key for prod test
 MAINNET_HTTP_URL=http://main.rpc
 MAINNET_WSS_URL=ws://main.rpc
 HELIUS_API_KEY=prod_helius_key # Different API key for prod test
-'''
+"""
     env_path = tmp_path / ".env.test.prod"
     env_path.write_text(env_content)
     return str(env_path)
 
+
 # Helper to create temp config file
 @pytest.fixture
 def temp_config_file(tmp_path):
-    config_content = '''
+    config_content = """
 general:
   project_name: Test Sniper Bot
   version: 0.1.0
@@ -101,20 +104,25 @@ monitoring:
   enable_auto_sell: false
   poll_interval_seconds: 30
   # ... other monitoring defaults
-'''
+"""
     config_path = tmp_path / "config.test.yml"
     config_path.write_text(config_content)
     return str(config_path)
 
+
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
+
 
 def test_load_config_defaults(tmp_path, temp_env_file):
     """Test loading config with minimal env overrides."""
     # Ensure env vars that might conflict are unset
-    if 'LOG_LEVEL' in os.environ: del os.environ['LOG_LEVEL']
-    if 'SNIPEROO_API_KEY' in os.environ: del os.environ['SNIPEROO_API_KEY']
-    if 'JITO_AUTH_KEYPAIR_PATH' in os.environ: del os.environ['JITO_AUTH_KEYPAIR_PATH']
+    if "LOG_LEVEL" in os.environ:
+        del os.environ["LOG_LEVEL"]
+    if "SNIPEROO_API_KEY" in os.environ:
+        del os.environ["SNIPEROO_API_KEY"]
+    if "JITO_AUTH_KEYPAIR_PATH" in os.environ:
+        del os.environ["JITO_AUTH_KEYPAIR_PATH"]
 
     # Define minimal valid YAML content within the test
     config_content = """
@@ -212,7 +220,7 @@ advanced:
     config_path.write_text(config_content)
 
     # Set required env var for SELF_BUILT in dev
-    os.environ['DEV_WALLET_PRIVATE_KEY'] = 'dummy_dev_key_for_defaults_test'
+    os.environ["DEV_WALLET_PRIVATE_KEY"] = "dummy_dev_key_for_defaults_test"
 
     # Pass the paths from fixtures/created file to the loader
     config = load_configuration(config_path=str(config_path), env_path=temp_env_file)
@@ -228,10 +236,11 @@ advanced:
     assert config.database.dev_db_file == "test_dev.sqlite"
     assert str(config.rpc.devnet_http_url) == "http://dev.rpc/"
     assert config.rpc.devnet_wss_url == "ws://dev.rpc"
-    assert config.dev_wallet_private_key == 'dummy_dev_key_for_defaults_test'
-    assert config.api_keys.helius_api_key == "env_helius_key" # Env overrides config
+    assert config.dev_wallet_private_key == "dummy_dev_key_for_defaults_test"
+    assert config.api_keys.helius_api_key == "env_helius_key"  # Env overrides config
     assert config.execution.provider == "SELF_BUILT"
     assert config.execution.slippage_percent == 25.0
+
 
 def test_load_config_env_override(tmp_path, temp_env_file):
     """Test environment variables override config file values."""
@@ -331,14 +340,14 @@ advanced:
     config_path.write_text(config_content)
 
     # Set environment variables using the APP_ prefix and double underscore for nesting
-    os.environ['APP_GENERAL__LOG_LEVEL'] = 'DEBUG'
-    os.environ['APP_EXECUTION__SLIPPAGE_PERCENT'] = '50.5'
+    os.environ["APP_GENERAL__LOG_LEVEL"] = "DEBUG"
+    os.environ["APP_EXECUTION__SLIPPAGE_PERCENT"] = "50.5"
 
     # Set another override via env var, e.g., for API key
-    os.environ['APP_API_KEYS__HELIUS_API_KEY'] = 'override_helius_key'
+    os.environ["APP_API_KEYS__HELIUS_API_KEY"] = "override_helius_key"
 
     # Set required env var for SELF_BUILT in dev
-    os.environ['DEV_WALLET_PRIVATE_KEY'] = 'dummy_dev_key_for_override_test'
+    os.environ["DEV_WALLET_PRIVATE_KEY"] = "dummy_dev_key_for_override_test"
 
     # Pass the paths from fixtures/created file to the loader
     config = load_configuration(config_path=str(config_path), env_path=temp_env_file)
@@ -346,23 +355,24 @@ advanced:
     assert isinstance(config, AppConfig)
 
     # Assert that the values from environment variables have overridden the config file
-    assert config.general.log_level == 'DEBUG'
+    assert config.general.log_level == "DEBUG"
     assert config.execution.slippage_percent == 50.5
-    assert config.api_keys.helius_api_key == 'override_helius_key'
+    assert config.api_keys.helius_api_key == "override_helius_key"
 
     # Clean up environment variables set by the test
-    del os.environ['APP_GENERAL__LOG_LEVEL']
-    del os.environ['APP_EXECUTION__SLIPPAGE_PERCENT']
-    del os.environ['APP_API_KEYS__HELIUS_API_KEY']
+    del os.environ["APP_GENERAL__LOG_LEVEL"]
+    del os.environ["APP_EXECUTION__SLIPPAGE_PERCENT"]
+    del os.environ["APP_API_KEYS__HELIUS_API_KEY"]
+
 
 def test_missing_required_env_vars(tmp_path):
     """Test validation fails if required env vars are missing for SELF_BUILT provider."""
     # Create an incomplete env file (missing DEV_WALLET_PRIVATE_KEY)
-    env_content = '''
+    env_content = """
     # Missing DEV_WALLET_PRIVATE_KEY
     APP_RPC__DEVNET_HTTP_URL=http://dev.rpc
     APP_RPC__DEVNET_WSS_URL=ws://dev.rpc
-    '''
+    """
     env_path = tmp_path / ".env.incomplete"
     env_path.write_text(env_content)
 
@@ -521,17 +531,20 @@ def test_missing_required_env_vars(tmp_path):
     self_built_config_path.write_text(config_content_self_built)
 
     with pytest.raises(ValidationError) as excinfo:
-        load_configuration(config_path=str(self_built_config_path), env_path=str(env_path))
+        load_configuration(
+            config_path=str(self_built_config_path), env_path=str(env_path)
+        )
 
     assert "DEV_WALLET_PRIVATE_KEY must be set" in str(excinfo.value)
 
+
 def test_invalid_yaml_format(tmp_path):
     """Test loading with an invalid YAML file."""
-    invalid_yaml_content = '''
+    invalid_yaml_content = """
 general:
   app_name: Test
 invalid_indentation_or_structure: { key: value
-'''
+"""
     invalid_yaml_path = tmp_path / "invalid_config.yaml"
     invalid_yaml_path.write_text(invalid_yaml_content)
 
@@ -541,12 +554,14 @@ invalid_indentation_or_structure: { key: value
     # Clean up the invalid file
     invalid_yaml_path.unlink()
 
+
 def test_non_existent_config_file(tmp_path):
     """Test loading with a non-existent config file path."""
     non_existent_path = tmp_path / "not_a_real_config.yaml"
     # load_configuration should handle the missing file and return None
     result = load_configuration(config_path=str(non_existent_path))
     assert result is None
+
 
 def test_load_config_production(tmp_path, temp_prod_env_file):
     """Test loading config with APP_ENV=production."""
@@ -647,38 +662,46 @@ advanced:
     config_path.write_text(config_content)
 
     # Set environment variables for production
-    os.environ['APP_ENV'] = 'production'
+    os.environ["APP_ENV"] = "production"
     # Required env vars for JITO_BUNDLER provider
-    os.environ['PROD_WALLET_PRIVATE_KEY'] = 'dummy_prod_key_for_prod_test'
-    os.environ['JITO_BLOCK_ENGINE_URL'] = 'http://jito.engine'
-    os.environ['JITO_AUTH_KEYPAIR_PATH'] = str(tmp_path / 'jito_key.json') # Dummy path
+    os.environ["PROD_WALLET_PRIVATE_KEY"] = "dummy_prod_key_for_prod_test"
+    os.environ["JITO_BLOCK_ENGINE_URL"] = "http://jito.engine"
+    os.environ["JITO_AUTH_KEYPAIR_PATH"] = str(tmp_path / "jito_key.json")  # Dummy path
     # Create dummy Jito key file
-    (tmp_path / 'jito_key.json').touch()
+    (tmp_path / "jito_key.json").touch()
 
     # Load configuration
-    config = load_configuration(config_path=str(config_path), env_path=temp_prod_env_file)
+    config = load_configuration(
+        config_path=str(config_path), env_path=temp_prod_env_file
+    )
 
     # Assertions
     assert isinstance(config, AppConfig)
-    assert config.general.app_env == 'production' # Verify env is set correctly
-    assert config.general.log_level == 'WARNING'
+    assert config.general.app_env == "production"  # Verify env is set correctly
+    assert config.general.log_level == "WARNING"
     assert config.general.dry_run is False
     # Verify Prod settings are loaded
     assert config.database.prod_db_file == "test_prod.sqlite"
-    assert str(config.rpc.mainnet_http_url) == "http://main.rpc/" # Check prod RPC URL
+    assert str(config.rpc.mainnet_http_url) == "http://main.rpc/"  # Check prod RPC URL
     assert config.rpc.mainnet_wss_url == "ws://main.rpc"
-    assert config.prod_wallet_private_key == 'dummy_prod_key_for_prod_test' # Check prod key
-    assert config.api_keys.helius_api_key == "prod_helius_key" # Check prod API key from env
+    assert (
+        config.prod_wallet_private_key == "dummy_prod_key_for_prod_test"
+    )  # Check prod key
+    assert (
+        config.api_keys.helius_api_key == "prod_helius_key"
+    )  # Check prod API key from env
     assert config.execution.provider == "JITO_BUNDLER"
     assert config.execution.buy_amount_sol == 0.05
     assert config.execution.jito.tip_lamports == 10000
-    assert config.filtering.contract_liquidity.min_initial_sol_liquidity == 1.0 # Check prod filter value
+    assert (
+        config.filtering.contract_liquidity.min_initial_sol_liquidity == 1.0
+    )  # Check prod filter value
     assert config.telegram_bot.enabled is True
 
     # Clean up environment variables
-    del os.environ['APP_ENV']
-    del os.environ['PROD_WALLET_PRIVATE_KEY']
-    del os.environ['JITO_BLOCK_ENGINE_URL']
-    del os.environ['JITO_AUTH_KEYPAIR_PATH']
-    if 'HELIUS_API_KEY' in os.environ: # Clean up if set by prod env file
-        del os.environ['HELIUS_API_KEY']
+    del os.environ["APP_ENV"]
+    del os.environ["PROD_WALLET_PRIVATE_KEY"]
+    del os.environ["JITO_BLOCK_ENGINE_URL"]
+    del os.environ["JITO_AUTH_KEYPAIR_PATH"]
+    if "HELIUS_API_KEY" in os.environ:  # Clean up if set by prod env file
+        del os.environ["HELIUS_API_KEY"]
