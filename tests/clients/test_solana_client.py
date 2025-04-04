@@ -19,7 +19,9 @@ from solders.rpc.responses import (
     RpcResponseContext,
     SendTransactionResp,
     GetSignatureStatusesResp,
-    SignatureStatus,  # Added import here
+    RpcConfirmedTransactionStatusWithSignature,  # Import the correct type
+    RpcBlockhash,  # Added import
+    RpcTokenAmount,  # Added import
     # TransactionErrorType, # Moved import
 )
 from solders.transaction import (
@@ -83,7 +85,7 @@ def mock_logger():
 # These fixtures automatically patch dependencies for the duration of a test
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()  # Removed autouse=True
 def mock_async_client():
     """Mocks solana.rpc.api.AsyncClient."""
     with patch(f"{TARGET_MODULE}.AsyncClient", new_callable=AsyncMock) as mock_client:
@@ -279,9 +281,10 @@ class TestSolanaClient:
     async def test_get_token_supply(self, client):
         """Tests the get_token_supply wrapper."""
         mock_mint_pubkey = Pubkey.new_unique()
+        # Corrected: Pass RpcTokenAmount directly to value
         mock_response = GetTokenSupplyResp(
             context=RpcResponseContext(slot=1),
-            value=GetTokenSupplyResp.Value(
+            value=RpcTokenAmount(  # Assuming RpcTokenAmount is the correct type based on context
                 amount="1000000", decimals=6, ui_amount=1.0, ui_amount_string="1.0"
             ),
         )
@@ -298,9 +301,10 @@ class TestSolanaClient:
     async def test_get_token_account_balance(self, client):
         """Tests the get_token_account_balance wrapper."""
         mock_acc_pubkey = Pubkey.new_unique()
+        # Corrected: Pass RpcTokenAmount directly to value
         mock_response = GetTokenAccountBalanceResp(
             context=RpcResponseContext(slot=1),
-            value=GetTokenAccountBalanceResp.Value(
+            value=RpcTokenAmount(  # Assuming RpcTokenAmount is the correct type based on context
                 amount="500", decimals=6, ui_amount=0.0005, ui_amount_string="0.0005"
             ),
         )
@@ -450,7 +454,8 @@ class TestSolanaClient:
         """Provides a mock GetLatestBlockhashResp."""
         return GetLatestBlockhashResp(
             context=RpcResponseContext(slot=100),
-            value=GetLatestBlockhashResp.Value(
+            # Corrected: Pass RpcBlockhash directly to value
+            value=RpcBlockhash(
                 blockhash=Hash.new_unique(), last_valid_block_height=100
             ),
         )
@@ -722,7 +727,7 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10, confirmations=None, err=None, confirmation_status=None
                 )
             ],
@@ -730,7 +735,7 @@ class TestSolanaClient:
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=11, confirmations=10, err=None, confirmation_status=Confirmed
                 )
             ],
@@ -738,7 +743,7 @@ class TestSolanaClient:
         resp_finalized = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=3),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=12, confirmations=32, err=None, confirmation_status=Finalized
                 )
             ],
@@ -782,7 +787,7 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10, confirmations=None, err=None, confirmation_status=None
                 )
             ],
@@ -790,7 +795,7 @@ class TestSolanaClient:
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=11, confirmations=10, err=None, confirmation_status=Confirmed
                 )
             ],
@@ -822,7 +827,7 @@ class TestSolanaClient:
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10,
                     confirmations=None,
                     err=mock_tx_error,
@@ -852,7 +857,7 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10, confirmations=None, err=None, confirmation_status=None
                 )
             ],
@@ -1312,7 +1317,7 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10, confirmations=None, err=None, confirmation_status=None
                 )
             ],
@@ -1320,7 +1325,7 @@ class TestSolanaClient:
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=11, confirmations=10, err=None, confirmation_status=Confirmed
                 )
             ],
@@ -1328,7 +1333,7 @@ class TestSolanaClient:
         resp_finalized = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=3),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=12, confirmations=32, err=None, confirmation_status=Finalized
                 )
             ],
@@ -1372,7 +1377,7 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10, confirmations=None, err=None, confirmation_status=None
                 )
             ],
@@ -1380,7 +1385,7 @@ class TestSolanaClient:
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=11, confirmations=10, err=None, confirmation_status=Confirmed
                 )
             ],
@@ -1412,7 +1417,7 @@ class TestSolanaClient:
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10,
                     confirmations=None,
                     err=mock_tx_error,
@@ -1442,7 +1447,7 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                SignatureStatus(
+                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
                     slot=10, confirmations=None, err=None, confirmation_status=None
                 )
             ],
