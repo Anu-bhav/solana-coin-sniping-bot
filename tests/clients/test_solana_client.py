@@ -654,10 +654,9 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(1)
         )
+        # Correct SendTransactionPreflightFailureMessage instantiation
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            TransactionError(mock_instruction_error),
-            # logs=[], # Removed invalid logs argument
-            # units_consumed=0, # Removed invalid units_consumed argument
+            data=TransactionError(mock_instruction_error)
         )
         mock_exception = RPCException(preflight_failure)
 
@@ -683,7 +682,7 @@ class TestSolanaClient:
         """Tests successful transaction confirmation at Finalized commitment."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        # Revert to using TransactionStatus, remove 'confirmations'
+        # Use TransactionStatus, remove 'confirmations'
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
@@ -780,7 +779,7 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(5)
         )
-        # Pass the wrapper directly to TransactionStatus
+        # Pass the inner error directly to TransactionStatus
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
@@ -800,7 +799,6 @@ class TestSolanaClient:
             )
 
         # Check if the raised exception contains the expected error structure
-        # This might need adjustment based on how TransactionError wraps things
         assert isinstance(exc_info.value.err, TransactionErrorInstructionError)
         assert exc_info.value.err.index == 0
         assert isinstance(exc_info.value.err.err, InstructionErrorCustom)
