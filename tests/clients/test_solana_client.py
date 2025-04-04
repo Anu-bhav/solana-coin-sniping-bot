@@ -23,13 +23,15 @@ from solders.rpc.responses import (
     RpcTokenAccountBalance,  # Keep for now
     RpcSupply,  # Keep for now
     RpcSimulateTransactionResult,
+    # RpcConfirmedTransactionStatusWithSignature, # Removed
 )
 from solders.account_decoder import UiTokenAmount  # Correct import location
 from solders.transaction_status import (
     TransactionStatus,
     TransactionConfirmationStatus,
-    InstructionError,
-    TransactionErrorInstructionError,
+    InstructionError,  # Import the enum
+    TransactionErrorInstructionError,  # Import the wrapper
+    # Do not import specific variants like Custom or AccountInUse
 )
 from solders.transaction import TransactionError, Transaction
 import time
@@ -768,7 +770,7 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        # Assuming InstructionError(5) implies a Custom error variant
+        # Access variant via enum: InstructionError.Custom(5)
         mock_tx_error = TransactionError(
             TransactionErrorInstructionError(0, InstructionError.Custom(5))
         )

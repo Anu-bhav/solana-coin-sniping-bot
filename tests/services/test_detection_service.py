@@ -7,7 +7,7 @@ from typing import List, Optional
 from solders.pubkey import Pubkey
 from solders.rpc.responses import (
     RpcLogsResponse,
-    SubscriptionResult,
+    SubscriptionResult,  # Keep this, might be used by underlying mocks implicitly
     LogsNotification,
     RpcResponseContext,
 )
@@ -18,9 +18,9 @@ from solders.transaction_status import (
     UiTransaction,
     UiMessage,
     UiInnerInstructions,
-    AccountInUse,
-    InstructionError,
-    TransactionErrorInstructionError,  # Add missing wrapper import
+    InstructionError,  # Import the enum
+    TransactionErrorInstructionError,  # Import the wrapper
+    # AccountInUse, # Removed direct import
 )
 from solders.transaction import TransactionError
 from solders.signature import Signature
@@ -96,15 +96,15 @@ def detection_service(
 
 def create_mock_log_notification(
     signature: Signature, logs: List[str], err: Optional[TransactionError] = None
-) -> SubscriptionResult:
-    """Creates a mock SubscriptionResult containing a LogsNotification."""
+) -> LogsNotification:
+    """Creates a mock LogsNotification object."""
+    # Pass slot positionally to RpcResponseContext constructor
     log_result = RpcLogsResponse(signature=signature, logs=logs, err=err)
+    # Corrected: slot is the first argument for RpcResponseContext
     notification = LogsNotification(
-        subscription=123, result=RpcResponseContext(log_result, slot=1)
-    )  # Using dummy context
-    # Wrap in SubscriptionResult if that's what the callback expects
-    # Adjust based on the actual type hint and library behavior
-    return notification  # Assuming callback directly receives LogsNotification based on service code
+        subscription=123, result=RpcResponseContext(1, log_result)
+    )
+    return notification
 
 
 def create_mock_tx_details(
@@ -121,7 +121,7 @@ def create_mock_tx_details(
         fee_payer = Pubkey.new_unique()
 
     # Simplified mock structure - expand as needed for parsing logic tests
-    mock_meta = UiTransactionStatusMeta(  # Renamed from TransactionStatusMeta
+    mock_meta = UiTransactionStatusMeta(
         err=None,
         fee=5000,
         pre_balances=[],
@@ -133,15 +133,12 @@ def create_mock_tx_details(
         rewards=[],
         loaded_addresses=None,
         compute_units_consumed=None,
-        return_data=None,  # Added field
+        return_data=None,
     )
-    # Create a basic UiMessage mock
     mock_message = UiMessage(
-        account_keys=[fee_payer, Pubkey.new_unique()],  # Example account keys
-        instructions=[],  # Add mock instructions if needed
-        recent_blockhash=str(
-            Signature.new_unique()
-        ),  # Use str() instead of to_string()
+        account_keys=[fee_payer, Pubkey.new_unique()],
+        instructions=[],
+        recent_blockhash=str(Signature.new_unique()),
         address_table_lookups=None,
     )
     mock_transaction = UiTransaction(signatures=[signature], message=mock_message)
@@ -151,7 +148,7 @@ def create_mock_tx_details(
         block_time=1678886400,
         transaction=mock_transaction,
         meta=mock_meta,
-        version=0,  # Specify version if needed
+        version=0,
     )
 
 
@@ -189,11 +186,10 @@ class TestDetectionService:
         self, detection_service, mock_solana_client
     ):
         """Test that run() calls start_log_subscription and can be stopped."""
-        # Mock subscription to run 'forever' until cancelled
         mock_solana_client.start_log_subscription.side_effect = asyncio.Future()
 
         run_task = asyncio.create_task(detection_service.run())
-        await asyncio.sleep(0.01)  # Give time for run loop to start
+        await asyncio.sleep(0.01)
 
         mock_solana_client.start_log_subscription.assert_called_once_with(
             program_ids=detection_service.program_ids,
@@ -201,14 +197,11 @@ class TestDetectionService:
         )
         assert detection_service._running
 
-        # Stop the service
         await detection_service.stop()
-        await asyncio.sleep(0.01)  # Allow loop to exit
+        await asyncio.sleep(0.01)
 
         assert not detection_service._running
-        # Check if the future was cancelled (depends on how stop interacts with the future)
-        # assert mock_solana_client.start_log_subscription.side_effect.cancelled()
-        run_task.cancel()  # Clean up task
+        run_task.cancel()
         try:
             await run_task
         except asyncio.CancelledError:
@@ -219,32 +212,25 @@ class TestDetectionService:
     ):
         """Test reconnection logic when start_log_subscription raises an error."""
         error_to_raise = ConnectionRefusedError("Test connection error")
-        # First call raises error, second call waits indefinitely (simulates successful reconnect)
         mock_solana_client.start_log_subscription.side_effect = [
             error_to_raise,
             asyncio.Future(),
         ]
 
         run_task = asyncio.create_task(detection_service.run())
-        await asyncio.sleep(
-            test_config["detection"]["reconnect_delay_seconds"] * 0.5
-        )  # Wait less than reconnect delay
+        await asyncio.sleep(test_config["detection"]["reconnect_delay_seconds"] * 0.5)
 
-        # Should have called once and failed
         assert mock_solana_client.start_log_subscription.call_count == 1
 
-        await asyncio.sleep(
-            test_config["detection"]["reconnect_delay_seconds"] * 1.1
-        )  # Wait longer than reconnect delay
+        await asyncio.sleep(test_config["detection"]["reconnect_delay_seconds"] * 1.1)
 
-        # Should have called a second time (reconnect attempt)
         assert mock_solana_client.start_log_subscription.call_count == 2
         mock_solana_client.start_log_subscription.assert_called_with(
             program_ids=detection_service.program_ids,
             callback=detection_service._handle_log_message,
         )
 
-        run_task.cancel()  # Clean up task
+        run_task.cancel()
         try:
             await run_task
         except asyncio.CancelledError:
@@ -255,7 +241,6 @@ class TestDetectionService:
         subscription_id = 98765
         await detection_service._handle_log_message(subscription_id)
         assert detection_service._subscription_id == subscription_id
-        # Ensure no other actions (like fetching tx) were taken
         detection_service.solana_client.get_parsed_transaction.assert_not_called()
         detection_service.filter_queue.put.assert_not_called()
 
@@ -264,10 +249,10 @@ class TestDetectionService:
     ):
         """Test that logs from failed transactions are ignored."""
         sig = Signature.new_unique()
-        # Use correct error structure based on documentation
-        # Assuming index 0 for the instruction causing the error
+        # Use correct error structure: TransactionError(TransactionErrorInstructionError(index, InstructionError.Variant))
+        # Access variant via enum: InstructionError.AccountInUse()
         mock_error = TransactionError(
-            TransactionErrorInstructionError(0, AccountInUse())
+            TransactionErrorInstructionError(0, InstructionError.AccountInUse())
         )
         mock_notification = create_mock_log_notification(sig, ["Log 1"], err=mock_error)
 
@@ -285,7 +270,6 @@ class TestDetectionService:
         mock_tx = create_mock_tx_details(sig)
         mock_solana_client.get_parsed_transaction.return_value = mock_tx
 
-        # Mock the parser to return None so we only test fetching
         with patch.object(
             detection_service, "_parse_transaction_for_pool", return_value=None
         ):
@@ -305,9 +289,7 @@ class TestDetectionService:
         return {
             "token_mint": "NEW_TOKEN_MINT",
             "lp_address": "LP_ADDRESS_XYZ",
-            "base_mint": test_config["detection"]["target_base_mints"][
-                0
-            ],  # Use a valid base mint
+            "base_mint": test_config["detection"]["target_base_mints"][0],
             "creator_address": str(Pubkey.new_unique()),
         }
 
@@ -327,9 +309,8 @@ class TestDetectionService:
         mock_tx = create_mock_tx_details(sig)
 
         mock_solana_client.get_parsed_transaction.return_value = mock_tx
-        mock_db_manager.check_if_token_processed.return_value = False  # Not processed
+        mock_db_manager.check_if_token_processed.return_value = False
 
-        # Patch the parser to return our mock data
         with patch.object(
             detection_service,
             "_parse_transaction_for_pool",
@@ -337,7 +318,6 @@ class TestDetectionService:
         ):
             await detection_service._handle_log_message(mock_notification)
 
-        # Verify checks and actions
         detection_service._parse_transaction_for_pool.assert_called_once_with(
             mock_tx, mock_notification.result.value.logs
         )
@@ -364,13 +344,11 @@ class TestDetectionService:
 
         mock_solana_client.get_parsed_transaction.return_value = mock_tx
 
-        # Patch the parser to return None
         with patch.object(
             detection_service, "_parse_transaction_for_pool", return_value=None
         ) as mock_parser:
             await detection_service._handle_log_message(mock_notification)
 
-        # Verify parser was called, but subsequent steps were not
         mock_parser.assert_called_once()
         mock_db_manager.check_if_token_processed.assert_not_called()
         mock_filter_queue.put.assert_not_called()
@@ -392,7 +370,6 @@ class TestDetectionService:
         mock_tx = create_mock_tx_details(sig)
         mock_solana_client.get_parsed_transaction.return_value = mock_tx
 
-        # Modify parsed data to have a non-target base mint
         invalid_parsed_data = mock_parsed_data.copy()
         invalid_parsed_data["base_mint"] = "NON_TARGET_BASE_MINT"
 
@@ -403,7 +380,6 @@ class TestDetectionService:
         ):
             await detection_service._handle_log_message(mock_notification)
 
-        # Verify parsing happened, but filtering stopped processing
         detection_service._parse_transaction_for_pool.assert_called_once()
         mock_db_manager.check_if_token_processed.assert_not_called()
         mock_filter_queue.put.assert_not_called()
@@ -424,9 +400,7 @@ class TestDetectionService:
         )
         mock_tx = create_mock_tx_details(sig)
         mock_solana_client.get_parsed_transaction.return_value = mock_tx
-        mock_db_manager.check_if_token_processed.return_value = (
-            True  # Mark as processed
-        )
+        mock_db_manager.check_if_token_processed.return_value = True
 
         with patch.object(
             detection_service,
@@ -435,7 +409,6 @@ class TestDetectionService:
         ):
             await detection_service._handle_log_message(mock_notification)
 
-        # Verify parsing and DB check happened, but filtering stopped processing
         detection_service._parse_transaction_for_pool.assert_called_once()
         mock_db_manager.check_if_token_processed.assert_awaited_once_with(
             mock_parsed_data["token_mint"]
@@ -457,7 +430,6 @@ class TestDetectionService:
 
         await detection_service._handle_log_message(mock_notification)
 
-        # Verify no queueing or DB interaction occurred after the error
         mock_filter_queue.put.assert_not_called()
         mock_db_manager.check_if_token_processed.assert_not_called()
         mock_db_manager.add_detection.assert_not_called()
@@ -488,7 +460,6 @@ class TestDetectionService:
         ):
             await detection_service._handle_log_message(mock_notification)
 
-        # Verify no queueing or DB add occurred after the error
         mock_filter_queue.put.assert_not_called()
         mock_db_manager.add_detection.assert_not_called()
 
@@ -518,9 +489,7 @@ class TestDetectionService:
         ):
             await detection_service._handle_log_message(mock_notification)
 
-        # Verify queueing still happened
         mock_filter_queue.put.assert_awaited_once_with(mock_parsed_data)
-        # Verify DB add was attempted
         mock_db_manager.add_detection.assert_awaited_once()
 
     async def test_handle_log_message_handles_unexpected_message(
@@ -530,7 +499,6 @@ class TestDetectionService:
         unexpected_message = {"some": "random", "data": "structure"}
         await detection_service._handle_log_message(unexpected_message)
 
-        # Verify no processing occurred
         detection_service.solana_client.get_parsed_transaction.assert_not_called()
         mock_filter_queue.put.assert_not_called()
         detection_service.db_manager.add_detection.assert_not_called()
@@ -540,11 +508,8 @@ class TestDetectionService:
         self, detection_service, test_config
     ):
         """Test the placeholder parsing logic returns expected structure (or None)."""
-        # This test is limited because the actual logic isn't implemented.
-        # It mainly checks if it returns *something* or *None* based on keywords.
         sig = Signature.new_unique()
         fee_payer = Pubkey.new_unique()
-        # Case 1: Logs contain keywords
         logs_with_keyword = ["Program log: Instruction: Initialize", "other log"]
         tx_details_keyword = create_mock_tx_details(
             sig, logs=logs_with_keyword, fee_payer=fee_payer
@@ -555,12 +520,9 @@ class TestDetectionService:
         assert parsed is not None
         assert "token_mint" in parsed
         assert "lp_address" in parsed
-        assert (
-            parsed["base_mint"] == test_config["detection"]["target_base_mints"][0]
-        )  # Checks placeholder logic
+        assert parsed["base_mint"] == test_config["detection"]["target_base_mints"][0]
         assert parsed["creator_address"] == str(fee_payer)
 
-        # Case 2: Logs do not contain keywords
         logs_without_keyword = ["Program log: Some other instruction", "another log"]
         tx_details_no_keyword = create_mock_tx_details(sig, logs=logs_without_keyword)
         parsed = detection_service._parse_transaction_for_pool(
@@ -568,7 +530,6 @@ class TestDetectionService:
         )
         assert parsed is None
 
-        # Case 3: No logs
         tx_details_no_logs = create_mock_tx_details(sig, logs=[])
         parsed = detection_service._parse_transaction_for_pool(tx_details_no_logs, [])
         assert parsed is None
