@@ -21,9 +21,12 @@ from solders.rpc.responses import (
     RpcSupply,
     RpcSimulateTransactionResult,
 )
-from solders.transaction import Transaction, TransactionError, VersionedTransaction
+from solders.transaction import (
+    TransactionError,
+    VersionedTransaction,
+)  # Remove legacy Transaction
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
-from solders.message import Message
+from solders.message import Message, MessageV0  # Add MessageV0
 from solders.instruction import Instruction
 
 from solana.rpc.async_api import AsyncClient  # Updated import path
@@ -334,26 +337,27 @@ class SolanaClient:
                 set_compute_unit_limit(self.compute_units),
             ]
             full_instructions = compute_budget_instructions + instructions
-            # 3. Compile Message (positional arguments: instructions, payer)
-            message = Message(full_instructions, self.keypair.pubkey())
-            # 4. Create Transaction from Message (signatures added during signing)
-            # Constructor: message, signatures
-            tx = Transaction(
-                message, []
-            )  # Pass message directly, empty list for signatures
-
-            # 5. Sign Transaction (this populates the signatures and associates blockhash)
-            tx.sign(self.keypair, recent_blockhash)  # Sign with fee payer first
-            # Sign with any additional signers
-            for signer in signers:
-                # Pass blockhash for partial signing too
-                tx.sign_partial(signer, recent_blockhash)
-
-            self.logger.debug(
-                f"Transaction created and signed by {len(all_signers)} signers."
+            # 3. Compile MessageV0
+            message = MessageV0.try_compile(
+                payer=self.keypair.pubkey(),
+                instructions=full_instructions,
+                address_lookup_table_accounts=[],  # No LUTs for now
+                recent_blockhash=recent_blockhash,
             )
 
-            # 6. Send or Simulate
+            # 4. Create VersionedTransaction (unsigned initially)
+            tx = VersionedTransaction(
+                message, []
+            )  # Pass empty list for signatures initially
+
+            # 5. Sign VersionedTransaction
+            tx.sign(all_signers, recent_blockhash)  # Pass all signers and blockhash
+
+            self.logger.debug(
+                f"VersionedTransaction created and signed by {len(all_signers)} signers."
+            )
+
+            # 5. Send or Simulate
             if dry_run:
                 self.logger.info("Dry running transaction...")
                 # Wrap in VersionedTransaction for simulation
