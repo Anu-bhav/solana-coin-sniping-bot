@@ -137,7 +137,9 @@ def create_mock_tx_details(
     mock_message = UiMessage(
         account_keys=[fee_payer, Pubkey.new_unique()],  # Example account keys
         instructions=[],  # Add mock instructions if needed
-        recent_blockhash=Signature.new_unique().to_string(),  # Use string for blockhash
+        recent_blockhash=str(
+            Signature.new_unique()
+        ),  # Use str() instead of to_string()
         address_table_lookups=None,
     )
     mock_transaction = UiTransaction(signatures=[signature], message=mock_message)

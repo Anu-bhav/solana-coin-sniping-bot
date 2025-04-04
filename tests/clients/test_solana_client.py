@@ -88,11 +88,15 @@ def mock_logger():
 
 
 @pytest.fixture()  # Removed autouse=True
-def mock_async_client():
+async def mock_async_client():  # Made fixture async
     """Mocks solana.rpc.api.AsyncClient."""
     with patch(f"{TARGET_MODULE}.AsyncClient", new_callable=AsyncMock) as mock_client:
         # Configure common return values or behaviors if needed globally
         mock_client.return_value.rpc_url = MOCK_RPC_URL  # Mock attribute access
+        # Added missing mock configurations from original autouse fixture
+        mock_client.return_value.commitment = Confirmed
+        mock_client.return_value.close = AsyncMock()
+        yield mock_client  # Yield the mock itself
         mock_client.return_value.commitment = Confirmed
         mock_client.return_value.close = AsyncMock()  # Mock the close method
         yield mock_client
@@ -148,6 +152,7 @@ class TestSolanaClient:
         instance = SolanaClient(mock_config, mock_logger)
         # Mock the underlying client instance created within SolanaClient.__init__
         instance.rpc_client = mock_async_client.return_value
+        yield instance  # Added yield
         yield instance
         # Teardown: Ensure connections are closed if tests didn't do it
         await instance.close()
