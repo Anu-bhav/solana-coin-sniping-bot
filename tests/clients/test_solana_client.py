@@ -23,15 +23,18 @@ from solders.rpc.responses import (
     RpcTokenAccountBalance,
     RpcSupply,
     RpcSimulateTransactionResult,
-    RpcConfirmedTransactionStatusWithSignature,  # Keep this
+    # RpcConfirmedTransactionStatusWithSignature, # Keep removed
 )
 from solders.account_decoder import UiTokenAmount
 
-# Removed imports from solders.transaction_status
-from solders.transaction import (
-    TransactionError,
-    Transaction,
-)  # Ensure InstructionError is NOT imported here
+# Re-add imports from solders.transaction_status, but remove specific errors
+from solders.transaction_status import (
+    TransactionStatus,
+    TransactionConfirmationStatus,
+    # InstructionErrorCustom, # Removed
+    # TransactionErrorInstructionError, # Removed
+)
+from solders.transaction import TransactionError, Transaction
 import time
 from solders.hash import Hash
 from solders.signature import Signature
@@ -84,18 +87,17 @@ def mock_logger():
 
 
 @pytest.fixture()
-async def mock_async_client_gen():  # Renamed to avoid confusion
+async def mock_async_client_gen():
     """Mocks solana.rpc.api.AsyncClient."""
     with patch(
         f"{TARGET_MODULE}.AsyncClient", new_callable=AsyncMock
     ) as mock_client_factory:
-        # Configure the instance returned by the factory
         mock_instance = AsyncMock()
         mock_instance.rpc_url = MOCK_RPC_URL
         mock_instance.commitment = Confirmed
         mock_instance.close = AsyncMock()
         mock_client_factory.return_value = mock_instance
-        yield mock_client_factory  # Yield the mock factory
+        yield mock_client_factory
 
 
 @pytest.fixture(autouse=True)
@@ -138,30 +140,21 @@ def mock_asyncio_sleep():
 class TestSolanaClient:
 
     @pytest.fixture
-    async def client(
-        self, mock_config, mock_logger, mock_async_client_gen
-    ):  # Made async again
+    async def client(self, mock_config, mock_logger, mock_async_client_gen):
         """Fixture to create a SolanaClient instance for testing."""
         from src.clients.solana_client import SolanaClient
 
-        # Instantiate the client - this will call AsyncClient(MOCK_RPC_URL...)
-        # which is patched by mock_async_client_gen
         instance = SolanaClient(mock_config, mock_logger)
-
-        # The instance's rpc_client should already be the mocked instance
-        # assert instance.rpc_client == mock_async_client_gen.return_value # Removed assertion
-
         yield instance
-        # Teardown handled by pytest/async fixtures
 
     # --- Test __init__ ---
 
     def test_init_success(
         self,
-        client,  # This test is sync, but fixture is async - pytest handles it.
+        client,
         mock_config,
         mock_logger,
-        mock_async_client_gen,  # Use renamed fixture
+        mock_async_client_gen,
         mock_keypair_from_string,
     ):
         """Tests successful initialization of SolanaClient."""
@@ -182,12 +175,10 @@ class TestSolanaClient:
             f"Loaded keypair for public key: {MOCK_PUBLIC_KEY}"
         )
 
-        mock_async_client_gen.assert_called_once_with(  # Check factory call
+        mock_async_client_gen.assert_called_once_with(
             MOCK_RPC_URL, commitment=client.DEFAULT_COMMITMENT, timeout=15
         )
-        assert (
-            client.rpc_client == mock_async_client_gen.return_value
-        )  # Check instance assignment
+        assert client.rpc_client == mock_async_client_gen.return_value
 
         assert client.wss_connection is None
         assert client.log_subscription_task is None
@@ -211,9 +202,7 @@ class TestSolanaClient:
 
         mock_logger.exception.assert_called_once()
 
-    async def test_close(
-        self, client, mock_async_client_gen, mock_websocket_connect
-    ):  # Use renamed fixture
+    async def test_close(self, client, mock_async_client_gen, mock_websocket_connect):
         """Tests the close method."""
         client.wss_connection = mock_websocket_connect.mock_protocol
         client.log_subscription_task = AsyncMock()
@@ -223,7 +212,7 @@ class TestSolanaClient:
 
         client.log_subscription_task.cancel.assert_called_once()
         mock_websocket_connect.mock_protocol.close.assert_called_once()
-        client.rpc_client.close.assert_called_once()  # Check close on the instance
+        client.rpc_client.close.assert_called_once()
         client.logger.info.assert_any_call("Closing SolanaClient connections...")
         client.logger.info.assert_any_call("SolanaClient connections closed.")
 
@@ -264,9 +253,7 @@ class TestSolanaClient:
         mock_hash = Hash.new_unique()
         mock_response = GetLatestBlockhashResp(
             context=RpcResponseContext(slot=1),
-            value=RpcBlockhash(  # Use RpcBlockhash directly
-                blockhash=mock_hash, last_valid_block_height=100
-            ),
+            value=RpcBlockhash(blockhash=mock_hash, last_valid_block_height=100),
         )
         client.rpc_client.get_latest_blockhash = AsyncMock(return_value=mock_response)
 
@@ -645,9 +632,12 @@ class TestSolanaClient:
         self, client, mock_instructions, mock_blockhash_resp
     ):
         """Tests handling of TransactionError (like preflight failure) during sending."""
+        # Use the specific importable error type
+        mock_instruction_error = TransactionErrorInstructionError(
+            0, InstructionErrorCustom(1)
+        )
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            # Revert to attribute access
-            TransactionError.InstructionError(0, 1),
+            TransactionError(mock_instruction_error),
             logs=[],
             units_consumed=0,
         )
@@ -675,37 +665,28 @@ class TestSolanaClient:
         """Tests successful transaction confirmation at Finalized commitment."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        # Revert to using RpcConfirmedTransactionStatusWithSignature, remove 'confirmations'
+        # Revert to using TransactionStatus, remove 'confirmations'
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
-            value=[
-                RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),
-                    slot=10,
-                    err=None,
-                    confirmation_status=None,
-                )
-            ],
+            value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
         )
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),
+                TransactionStatus(
                     slot=11,
                     err=None,
-                    confirmation_status=Confirmed,
+                    confirmation_status=TransactionConfirmationStatus.Confirmed,
                 )
             ],
         )
         resp_finalized = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=3),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),
+                TransactionStatus(
                     slot=12,
                     err=None,
-                    confirmation_status=Finalized,
+                    confirmation_status=TransactionConfirmationStatus.Finalized,
                 )
             ],
         )
@@ -745,23 +726,15 @@ class TestSolanaClient:
         mock_sig_str = str(mock_sig)
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
-            value=[
-                RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),
-                    slot=10,
-                    err=None,
-                    confirmation_status=None,
-                )
-            ],
+            value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
         )
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),
+                TransactionStatus(
                     slot=11,
                     err=None,
-                    confirmation_status=Confirmed,
+                    confirmation_status=TransactionConfirmationStatus.Confirmed,
                 )
             ],
         )
@@ -785,16 +758,18 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        # Revert to attribute access
-        mock_tx_error = TransactionError.InstructionError(0, 5)
+        # Use specific importable error type
+        mock_instruction_error = TransactionErrorInstructionError(
+            0, InstructionErrorCustom(5)
+        )
+        mock_tx_error = TransactionError(mock_instruction_error)
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),
+                TransactionStatus(
                     slot=10,
                     err=mock_tx_error,
-                    confirmation_status=Finalized,
+                    confirmation_status=TransactionConfirmationStatus.Finalized,
                 )
             ],
         )
@@ -819,14 +794,7 @@ class TestSolanaClient:
         mock_sig_str = str(mock_sig)
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
-            value=[
-                RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),
-                    slot=10,
-                    err=None,
-                    confirmation_status=None,
-                )
-            ],
+            value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
         )
 
         client.rpc_client.get_signature_statuses = AsyncMock(

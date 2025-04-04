@@ -11,6 +11,8 @@ from solders.rpc.responses import (
     LogsNotification,
     RpcResponseContext,
 )
+
+# Import specific error types from transaction_status based on user feedback
 from solders.transaction_status import (
     EncodedTransactionWithStatusMeta,
     UiTransactionEncoding,
@@ -18,7 +20,8 @@ from solders.transaction_status import (
     UiTransaction,
     UiMessage,
     UiInnerInstructions,
-    # Removed AccountInUse, InstructionError, TransactionErrorInstructionError imports
+    InstructionErrorFieldless,  # Import specific error type
+    TransactionErrorInstructionError,  # Import wrapper
 )
 from solders.transaction import TransactionError  # Keep base TransactionError
 from solders.signature import Signature
@@ -97,10 +100,11 @@ def create_mock_log_notification(
 ) -> LogsNotification:
     """Creates a mock LogsNotification object."""
     log_result = RpcLogsResponse(signature=signature, logs=logs, err=err)
-    # Use keyword arguments for RpcResponseContext
-    notification = LogsNotification(
-        subscription=123, result=RpcResponseContext(slot=1, value=log_result)
-    )
+    # Use keyword arguments for RpcResponseContext based on previous TypeError
+    # Provide api_version=None explicitly as it seemed required previously
+    context = RpcResponseContext(slot=1, api_version=None)
+    context.value = log_result  # Assign value after creation
+    notification = LogsNotification(subscription=123, result=context)
     return notification
 
 
@@ -131,9 +135,9 @@ def create_mock_tx_details(
         compute_units_consumed=None,
         return_data=None,
     )
-    # Simplify UiMessage instantiation: pass account_keys as list of strings
+    # Revert UiMessage instantiation to use Pubkey objects for account_keys
     mock_message = UiMessage(
-        account_keys=[str(fee_payer)],  # Simplified to string list
+        account_keys=[fee_payer, Pubkey.new_unique()],  # Use Pubkey objects
         instructions=[],
         recent_blockhash=str(Signature.new_unique()),
         address_table_lookups=None,
@@ -246,8 +250,10 @@ class TestDetectionService:
     ):
         """Test that logs from failed transactions are ignored."""
         sig = Signature.new_unique()
-        # Revert to attribute access
-        mock_error = TransactionError.AccountInUse
+        # Use specific importable error type and wrapper
+        mock_error = TransactionError(
+            TransactionErrorInstructionError(0, InstructionErrorFieldless.AccountInUse)
+        )
         mock_notification = create_mock_log_notification(sig, ["Log 1"], err=mock_error)
 
         await detection_service._handle_log_message(mock_notification)
