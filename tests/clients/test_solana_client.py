@@ -164,7 +164,8 @@ class TestSolanaClient:
 
     # --- Test __init__ ---
 
-    def test_init_success(
+    # This test needs client fixture, which is async, so mark test as async
+    async def test_init_success(
         self,
         client,
         mock_config,
@@ -654,9 +655,9 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(1)
         )
-        # Correct SendTransactionPreflightFailureMessage instantiation
+        # Correct SendTransactionPreflightFailureMessage instantiation (needs message)
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            data=TransactionError(mock_instruction_error)
+            message=TransactionError(mock_instruction_error)
         )
         mock_exception = RPCException(preflight_failure)
 
@@ -779,13 +780,14 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(5)
         )
-        # Pass the inner error directly to TransactionStatus
+        # Pass the TransactionError wrapper to TransactionStatus
+        mock_tx_error = TransactionError(mock_instruction_error)
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
                 TransactionStatus(
                     slot=10,
-                    err=mock_instruction_error,
+                    err=mock_tx_error,
                     confirmation_status=TransactionConfirmationStatus.Finalized,
                 )
             ],
@@ -807,7 +809,7 @@ class TestSolanaClient:
         assert client.rpc_client.get_signature_statuses.await_count == 1
         assert mock_asyncio_sleep.await_count == 0
         client.logger.error.assert_called_with(
-            f"Transaction {mock_sig_str} failed: {mock_instruction_error}"
+            f"Transaction {mock_sig_str} failed: {mock_tx_error}"
         )
 
     async def test_confirm_transaction_timeout(self, client, mock_asyncio_sleep):
