@@ -33,7 +33,6 @@ from solana.rpc.commitment import (
     SignatureStatus,
 )  # Try importing from solana.rpc.commitment
 from solders.instruction import Instruction, AccountMeta
-from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 
 # Target module for patching
 TARGET_MODULE = "src.clients.solana_client"
@@ -657,7 +656,7 @@ class TestSolanaClient:
         assert simulated_tx.fee_payer == client.keypair.pubkey()
         # A more robust check might involve mocking Transaction.sign itself, but this is often sufficient.
         client.logger.debug.assert_any_call(
-            f"Transaction created and signed by 2 signers."
+            "Transaction created and signed by 2 signers."
         )
 
     async def test_create_sign_send_transaction_rpc_error(

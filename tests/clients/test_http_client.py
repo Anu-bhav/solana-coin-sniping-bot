@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from unittest.mock import patch, AsyncMock
 
 import pytest

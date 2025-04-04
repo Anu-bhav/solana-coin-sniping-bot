@@ -1,14 +1,11 @@
 import asyncio
-import logging
 from typing import Any, Dict, List, Optional
 
-from solders.pubkey import Pubkey
-from solders.rpc.responses import RpcLogsResponse, SubscriptionResult, LogsNotification
+from solders.rpc.responses import SubscriptionResult, LogsNotification
 from solders.transaction_status import (
     EncodedTransactionWithStatusMeta,
     UiTransactionEncoding,
 )
-from solders.signature import Signature
 
 from src.clients.solana_client import SolanaClient
 from src.database.manager import DatabaseManager  # Corrected import path

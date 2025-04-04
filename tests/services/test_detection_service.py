@@ -1,7 +1,7 @@
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call
-from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, patch
+from typing import List, Optional
 
 # Assuming solders types are used based on service implementation
 from solders.pubkey import Pubkey
