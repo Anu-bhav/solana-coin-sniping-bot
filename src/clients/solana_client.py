@@ -355,10 +355,10 @@ class SolanaClient:
             # 5. Send or Simulate
             if dry_run:
                 self.logger.info("Dry running transaction...")
-                # Simulate VersionedTransaction directly
+                # Simulate VersionedTransaction directly (tx is already VersionedTransaction)
                 simulation_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.simulate_transaction,
-                    tx,  # Pass VersionedTransaction directly
+                    tx,
                     sig_verify=True,  # Verify signatures before simulating
                     commitment=commitment,
                 )
