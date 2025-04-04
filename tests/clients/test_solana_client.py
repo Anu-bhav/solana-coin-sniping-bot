@@ -27,17 +27,11 @@ from solders.rpc.responses import (
 )
 from solders.account_decoder import UiTokenAmount
 
-# Import specific error types from transaction_status
-from solders.transaction_status import (
-    InstructionErrorCustom,
-    TransactionErrorInstructionError,
-    # TransactionStatus, # Keep removed as it caused collection errors
-    # TransactionConfirmationStatus, # Keep removed
-)
+# Removed imports from solders.transaction_status
 from solders.transaction import (
     TransactionError,
     Transaction,
-)  # Keep base TransactionError
+)  # Ensure InstructionError is NOT imported here
 import time
 from solders.hash import Hash
 from solders.signature import Signature
