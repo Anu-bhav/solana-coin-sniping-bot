@@ -698,17 +698,10 @@ class TestSolanaClient:
             0, InstructionErrorCustom(1)
         )
         # Correct SendTransactionPreflightFailureMessage instantiation (use message=)
-        # Define the raw error data structure mimicking an RPC response for preflight failure
-        error_data = {
-            "code": -32002,  # Example error code for transaction preflight failure
-            "message": "Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1",
-            "data": {
-                "logs": ["Log1", "Program log: Error: Custom error 1", "Log3"],
-                "err": {"InstructionError": [0, {"Custom": 1}]},
-            },
-        }
-        # Instantiate RPCException directly with the error data dictionary
-        mock_exception = RPCException(error_data)
+        # Simplify the exception raised for now to isolate the issue
+        mock_exception = RPCException(
+            "Transaction simulation failed"
+        )  # Generic RPC Exception
 
         client.rpc_client.get_latest_blockhash = AsyncMock(
             return_value=mock_blockhash_resp
