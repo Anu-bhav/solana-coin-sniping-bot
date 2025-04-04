@@ -13,9 +13,15 @@ from solders.rpc.responses import (
     GetTokenAccountBalanceResp,
     GetTransactionResp,
     SimulateTransactionResp,
+    RpcResponseContext,
     SendTransactionResp,
+    GetSignatureStatusesResp,
+    RpcBlockhash,
+    RpcTokenAccountBalance,
+    RpcSupply,
+    RpcSimulateTransactionResult,
 )
-from solders.transaction import Transaction, TransactionError
+from solders.transaction import Transaction, TransactionError, VersionedTransaction
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 from solders.message import Message
 from solders.instruction import Instruction
@@ -336,19 +342,17 @@ class SolanaClient:
                 # recent_blockhash is not part of Message constructor
             )
 
-            # 4. Create Transaction from Message (signatures added during signing)
-            # Constructor: message, signatures
-            tx = Transaction(
-                message, []
-            )  # Pass message directly, empty list for signatures
-
-            # 5. Sign Transaction (this populates the signatures)
-            # Pass the recent_blockhash here for signing
-            tx.sign(self.keypair, recent_blockhash)  # Sign with fee payer first
-            # Sign with any additional signers
-            for signer in signers:
-                # Pass blockhash for partial signing too
-                tx.sign_partial(signer, recent_blockhash)
+            # 4. Create and Sign Transaction using new_signed_with_payer
+            # This requires the fee payer (self.keypair) and any other initial signers, plus the blockhash.
+            # Note: `all_signers` includes self.keypair already.
+            # Positional args: message, signer, signing_keypairs, recent_blockhash
+            tx = Transaction.new_signed_with_payer(
+                message,
+                self.keypair,  # Fee payer signer
+                all_signers,  # All signers including fee payer
+                recent_blockhash,
+            )
+            # No need for separate tx.sign or tx.sign_partial calls now
 
             self.logger.debug(
                 f"Transaction created and signed by {len(all_signers)} signers."
@@ -357,9 +361,11 @@ class SolanaClient:
             # 6. Send or Simulate
             if dry_run:
                 self.logger.info("Dry running transaction...")
+                # Wrap in VersionedTransaction for simulation
+                versioned_tx = VersionedTransaction(tx)
                 simulation_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.simulate_transaction,
-                    tx,
+                    versioned_tx,
                     sig_verify=True,  # Verify signatures before simulating
                     commitment=commitment,
                 )
@@ -376,7 +382,9 @@ class SolanaClient:
                 # Use send_raw_transaction if already serialized, or send_transaction
                 # send_transaction handles serialization and signing again, which is redundant but simpler API
                 # Let's serialize manually for clarity
-                serialized_tx = tx.serialize()
+                # Wrap in VersionedTransaction before serializing for sending
+                versioned_tx = VersionedTransaction(tx)
+                serialized_tx = versioned_tx.serialize()
                 send_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.send_raw_transaction,
                     serialized_tx,
