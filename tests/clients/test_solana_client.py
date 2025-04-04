@@ -29,7 +29,7 @@ from solders.transaction import (
 import time  # Import time for timeout test
 from solders.hash import Hash
 from solders.signature import Signature
-from solders.transaction_status import SignatureStatus
+from solders.transaction_status import SignatureStatus  # Reverted to original attempt
 from solders.instruction import Instruction, AccountMeta
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 
