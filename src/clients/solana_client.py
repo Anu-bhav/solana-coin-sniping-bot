@@ -342,17 +342,22 @@ class SolanaClient:
                 # recent_blockhash is not part of Message constructor
             )
 
-            # 4. Create and Sign Transaction using new_signed_with_payer
-            # This requires the fee payer (self.keypair) and any other initial signers, plus the blockhash.
-            # Note: `all_signers` includes self.keypair already.
-            # Positional args: instructions, payer_pubkey, signing_keypairs, recent_blockhash
-            tx = Transaction.new_signed_with_payer(
-                full_instructions,  # Pass instructions list directly
-                self.keypair.pubkey(),  # Payer public key
-                all_signers,  # List of Keypair signers
-                recent_blockhash,
-            )
-            # No need for separate tx.sign or tx.sign_partial calls now
+            # 3. Compile Message (positional arguments: instructions, payer)
+            message = Message(full_instructions, self.keypair.pubkey())
+
+            # 4. Create Transaction from Message (signatures added during signing)
+            # Constructor: message, signatures
+            tx = Transaction(
+                message, []
+            )  # Pass message directly, empty list for signatures
+
+            # 5. Sign Transaction (this populates the signatures)
+            # Pass the recent_blockhash here for signing
+            tx.sign(self.keypair, recent_blockhash)  # Sign with fee payer first
+            # Sign with any additional signers
+            for signer in signers:
+                # Pass blockhash for partial signing too
+                tx.sign_partial(signer, recent_blockhash)
 
             self.logger.debug(
                 f"Transaction created and signed by {len(all_signers)} signers."
