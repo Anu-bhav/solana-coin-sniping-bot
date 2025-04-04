@@ -7,7 +7,6 @@ from typing import List, Optional
 from solders.pubkey import Pubkey
 from solders.rpc.responses import (
     RpcLogsResponse,
-    SubscriptionResult,  # Keep this, might be used by underlying mocks implicitly
     LogsNotification,
     RpcResponseContext,
 )

@@ -13,13 +13,7 @@ from solders.rpc.responses import (
     GetTokenAccountBalanceResp,
     GetTransactionResp,
     SimulateTransactionResp,
-    RpcResponseContext,
     SendTransactionResp,
-    GetSignatureStatusesResp,
-    RpcBlockhash,
-    RpcTokenAccountBalance,
-    RpcSupply,
-    RpcSimulateTransactionResult,
 )
 from solders.transaction import (
     TransactionError,
@@ -348,13 +342,11 @@ class SolanaClient:
                 recent_blockhash=recent_blockhash,
             )
 
-            # 4. Create VersionedTransaction (unsigned initially)
-            tx = VersionedTransaction(
-                message, []
-            )  # Pass empty list for signatures initially
+            # 4. Create and Sign VersionedTransaction
+            # The constructor takes the message and the list of signers (Keypair objects)
+            tx = VersionedTransaction(message, all_signers)
 
-            # 5. Sign VersionedTransaction
-            tx.sign(all_signers, recent_blockhash)  # Pass all signers and blockhash
+            # No separate signing step needed as VersionedTransaction handles it
 
             self.logger.debug(
                 f"VersionedTransaction created and signed by {len(all_signers)} signers."
@@ -363,10 +355,10 @@ class SolanaClient:
             # 5. Send or Simulate
             if dry_run:
                 self.logger.info("Dry running transaction...")
-                # Simulate legacy Transaction directly
+                # Simulate VersionedTransaction directly
                 simulation_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.simulate_transaction,
-                    tx,  # Pass legacy tx directly
+                    tx,  # Pass VersionedTransaction directly
                     sig_verify=True,  # Verify signatures before simulating
                     commitment=commitment,
                 )
@@ -383,11 +375,11 @@ class SolanaClient:
                 # Use send_raw_transaction if already serialized, or send_transaction
                 # send_transaction handles serialization and signing again, which is redundant but simpler API
                 # Let's serialize manually for clarity
-                # Serialize legacy Transaction directly
+                # Serialize the VersionedTransaction directly
                 serialized_tx = tx.serialize()
                 send_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.send_raw_transaction,
-                    serialized_tx,  # Pass serialized legacy tx
+                    serialized_tx,  # Pass serialized VersionedTransaction
                     opts={
                         "skip_preflight": False,
                         "preflight_commitment": commitment,
