@@ -3,12 +3,10 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
+import pytest_asyncio
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.rpc import errors as solders_errors
-
-# Need SendTransactionPreflightFailureData for mock? No, error was about message/data arg
-# from solders.rpc.errors import SendTransactionPreflightFailureData
 from solana.rpc.core import RPCException
 from solana.rpc.commitment import Confirmed, Finalized
 from solders.rpc.responses import (
@@ -33,6 +31,7 @@ from solders.transaction_status import (
     TransactionConfirmationStatus,
     InstructionErrorCustom,
     TransactionErrorInstructionError,
+    InstructionErrorFieldless,  # Needed for AccountInUse mock attempt
 )
 from solders.transaction import TransactionError, Transaction
 import time
@@ -86,29 +85,29 @@ def mock_logger():
 # --- Auto-mocking Fixtures ---
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def mock_async_client_gen():
-    """Mocks solana.rpc.api.AsyncClient."""
-    with patch(
-        f"{TARGET_MODULE}.AsyncClient", new_callable=AsyncMock
-    ) as mock_client_factory:
-        mock_instance = AsyncMock()
-        mock_instance.rpc_url = MOCK_RPC_URL
-        mock_instance.commitment = Confirmed
-        mock_instance.close = AsyncMock()
-        # Configure methods used in tests
-        mock_instance.get_balance = AsyncMock()
-        mock_instance.get_account_info = AsyncMock()
-        mock_instance.get_latest_blockhash = AsyncMock()
-        mock_instance.get_token_supply = AsyncMock()
-        mock_instance.get_token_account_balance = AsyncMock()
-        mock_instance.get_transaction = AsyncMock()
-        mock_instance.simulate_transaction = AsyncMock()
-        mock_instance.send_raw_transaction = AsyncMock()
-        mock_instance.get_signature_statuses = AsyncMock()
+    """Mocks solana.rpc.api.AsyncClient such that calling it returns a mock instance."""
+    mock_instance = AsyncMock(
+        name="MockAsyncClientInstance"
+    )  # Give it a name for clarity
+    mock_instance.rpc_url = MOCK_RPC_URL
+    mock_instance.commitment = Confirmed
+    mock_instance.close = AsyncMock()
+    # Configure methods used in tests
+    mock_instance.get_balance = AsyncMock()
+    mock_instance.get_account_info = AsyncMock()
+    mock_instance.get_latest_blockhash = AsyncMock()
+    mock_instance.get_token_supply = AsyncMock()
+    mock_instance.get_token_account_balance = AsyncMock()
+    mock_instance.get_transaction = AsyncMock()
+    mock_instance.simulate_transaction = AsyncMock()
+    mock_instance.send_raw_transaction = AsyncMock()
+    mock_instance.get_signature_statuses = AsyncMock()
 
-        mock_client_factory.return_value = mock_instance
-        yield mock_client_factory
+    # Patch AsyncClient so that calling it *synchronously* returns mock_instance
+    with patch(f"{TARGET_MODULE}.AsyncClient", return_value=mock_instance):
+        yield mock_instance  # Yield the instance for tests to use/assert against
 
 
 @pytest.fixture(autouse=True)
@@ -129,11 +128,21 @@ def mock_websocket_connect():
         mock_ws_protocol.logs_subscribe = AsyncMock()
         mock_ws_protocol.logs_unsubscribe = AsyncMock()
 
-        async def _connect_generator(*args, **kwargs):
-            yield mock_ws_protocol
+        # Define an async iterator to be returned by __aiter__
+        async def mock_aiter():
+            # Example: yield a mock message if needed for specific tests
+            # For now, just make it a valid async iterator
+            if False:
+                yield
 
-        mock_connect.side_effect = _connect_generator
-        mock_connect.mock_protocol = mock_ws_protocol
+        mock_ws_protocol.__aiter__ = mock_aiter  # Assign the async generator function
+
+        # The connect mock should return an awaitable that resolves to the protocol
+        async def connect_side_effect(*args, **kwargs):
+            return mock_ws_protocol
+
+        mock_connect.side_effect = connect_side_effect
+        mock_connect.mock_protocol = mock_ws_protocol  # Keep reference for tests
         yield mock_connect
 
 
@@ -150,25 +159,28 @@ def mock_asyncio_sleep():
 @pytest.mark.asyncio  # Mark class to ensure all tests can use async fixtures
 class TestSolanaClient:
 
-    # Revert client fixture to async def
-    @pytest.fixture
+    # Revert client fixture to async def, depend on mock_async_client_gen
+    @pytest_asyncio.fixture
     async def client(self, mock_config, mock_logger, mock_async_client_gen):
         """Fixture to create a SolanaClient instance for testing."""
         from src.clients.solana_client import SolanaClient
 
+        # mock_async_client_gen fixture applies the patch
         instance = SolanaClient(mock_config, mock_logger)
-        # The patch applied by mock_async_client_gen ensures instance.rpc_client is the mock
+        # Ensure the mock was assigned correctly during init
+        assert (
+            instance.rpc_client is mock_async_client_gen
+        )  # Compare with the yielded instance
         yield instance
 
     # --- Test __init__ ---
 
-    # Keep test async as it uses async fixtures indirectly via client
     async def test_init_success(
         self,
-        client,
+        client,  # Use the async client fixture
         mock_config,
         mock_logger,
-        mock_async_client_gen,
+        mock_async_client_gen,  # Fixture applies the patch
         mock_keypair_from_string,
     ):
         """Tests successful initialization of SolanaClient."""
@@ -189,9 +201,11 @@ class TestSolanaClient:
             f"Loaded keypair for public key: {MOCK_PUBLIC_KEY}"
         )
 
+        # Check AsyncClient factory was called
         mock_async_client_gen.assert_called_once_with(
             MOCK_RPC_URL, commitment=client.DEFAULT_COMMITMENT, timeout=15
         )
+        # Check the instance has the correct mock client
         assert client.rpc_client == mock_async_client_gen.return_value
 
         assert client.wss_connection is None
@@ -217,8 +231,10 @@ class TestSolanaClient:
 
         mock_logger.exception.assert_called_once()
 
-    async def test_close(self, client, mock_async_client_gen, mock_websocket_connect):
+    async def test_close(self, client, mock_websocket_connect):
         """Tests the close method."""
+        # Assign mocks directly as client fixture now yields the instance
+        client.rpc_client = AsyncMock()  # Need a mock rpc_client for close()
         client.wss_connection = mock_websocket_connect.mock_protocol
         client.log_subscription_task = AsyncMock()
         client.log_subscription_task.done.return_value = False
@@ -227,7 +243,7 @@ class TestSolanaClient:
 
         client.log_subscription_task.cancel.assert_called_once()
         mock_websocket_connect.mock_protocol.close.assert_called_once()
-        client.rpc_client.close.assert_called_once()
+        client.rpc_client.close.assert_called_once()  # Check close on the mock
         client.logger.info.assert_any_call("Closing SolanaClient connections...")
         client.logger.info.assert_any_call("SolanaClient connections closed.")
 
@@ -546,7 +562,7 @@ class TestSolanaClient:
         )
         client.rpc_client.send_raw_transaction = AsyncMock(return_value=mock_send_resp)
         client.rpc_client.simulate_transaction = AsyncMock()
-        client.confirm_transaction = AsyncMock()
+        client.confirm_transaction = AsyncMock()  # Mock the instance method
 
         signature = await client.create_sign_send_transaction(
             mock_instructions, dry_run=False, skip_confirmation=True
@@ -580,29 +596,33 @@ class TestSolanaClient:
         )
         client.rpc_client.send_raw_transaction = AsyncMock(return_value=mock_send_resp)
         client.rpc_client.simulate_transaction = AsyncMock()
-        client.confirm_transaction = AsyncMock(return_value=True)
+        # Patch confirm_transaction directly on the instance for this test
+        with patch.object(
+            client, "confirm_transaction", new_callable=AsyncMock
+        ) as mock_confirm:
+            mock_confirm.return_value = True
 
-        result = await client.create_sign_send_transaction(
-            mock_instructions,
-            dry_run=False,
-            skip_confirmation=False,
-            commitment=Finalized,
-        )
+            result = await client.create_sign_send_transaction(
+                mock_instructions,
+                dry_run=False,
+                skip_confirmation=False,
+                commitment=Finalized,
+            )
 
-        client.rpc_client.get_latest_blockhash.assert_awaited_once_with(
-            commitment=Finalized
-        )
-        client.rpc_client.send_raw_transaction.assert_awaited_once()
-        client.rpc_client.simulate_transaction.assert_not_awaited()
-        client.confirm_transaction.assert_awaited_once_with(
-            str(mock_send_resp.value), commitment=Finalized
-        )
+            client.rpc_client.get_latest_blockhash.assert_awaited_once_with(
+                commitment=Finalized
+            )
+            client.rpc_client.send_raw_transaction.assert_awaited_once()
+            client.rpc_client.simulate_transaction.assert_not_awaited()
+            mock_confirm.assert_awaited_once_with(
+                str(mock_send_resp.value), commitment=Finalized
+            )
 
-        assert result == mock_send_resp
-        client.logger.info.assert_any_call("Sending transaction...")
-        client.logger.info.assert_any_call(
-            f"Transaction sent with signature: {mock_send_resp.value}"
-        )
+            assert result == mock_send_resp
+            client.logger.info.assert_any_call("Sending transaction...")
+            client.logger.info.assert_any_call(
+                f"Transaction sent with signature: {mock_send_resp.value}"
+            )
 
     async def test_create_sign_send_transaction_with_extra_signer(
         self, client, mock_instructions, mock_blockhash_resp, mock_sim_resp_ok
@@ -636,9 +656,11 @@ class TestSolanaClient:
         client.rpc_client.get_latest_blockhash = AsyncMock(side_effect=mock_exception)
 
         with pytest.raises(RPCException) as exc_info:
-            await client.get_latest_blockhash()
+            await client.create_sign_send_transaction(
+                mock_instructions
+            )  # Default dry_run=False
 
-        assert exc_info.value.args[0] == mock_rpc_error
+        assert exc_info.value == mock_exception
         client.logger.exception.assert_called_with(
             f"RPC error during transaction processing: {exc_info.value}"
         )
@@ -651,10 +673,10 @@ class TestSolanaClient:
         mock_instruction_error = TransactionErrorInstructionError(
             0, InstructionErrorCustom(1)
         )
-        # Correct SendTransactionPreflightFailureMessage instantiation (use data=)
+        # Correct SendTransactionPreflightFailureMessage instantiation (use message=)
         mock_tx_error = TransactionError(mock_instruction_error)
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            data=mock_tx_error
+            message=mock_tx_error  # Use message=
         )
         mock_exception = RPCException(preflight_failure)
 
@@ -928,7 +950,7 @@ class TestSolanaClient:
         client.logger.info.assert_any_call("Closing WebSocket connection...")
 
     async def test_close_wss_connection_not_connected(
-        self, client, mock_websocket_connect, mock_wss_message
+        self, client, mock_websocket_connect
     ):
         """Tests closing WSS connection when it's already closed or None."""
         client.wss_connection = None
@@ -1091,13 +1113,22 @@ class TestSolanaClient:
         await client.connect_wss()
         client.log_callback = mock_log_callback
 
+        # Configure the mock protocol's __aiter__ to yield the message
         async def msg_generator():
             yield mock_wss_message
-            raise StopAsyncIteration
+            # Add a small delay to allow processing before stopping
+            await asyncio.sleep(0.01)
 
         mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
 
-        await client._process_log_messages()
+        # Run the processor in a task to allow it to run concurrently
+        process_task = asyncio.create_task(client._process_log_messages())
+        await asyncio.sleep(0.05)  # Allow time for the message to be processed
+        process_task.cancel()
+        try:
+            await process_task
+        except asyncio.CancelledError:
+            pass  # Expected cancellation
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
 
@@ -1116,11 +1147,17 @@ class TestSolanaClient:
 
         async def msg_generator():
             yield mock_wss_message
-            raise StopAsyncIteration
+            await asyncio.sleep(0.01)
 
         mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
 
-        await client._process_log_messages()
+        process_task = asyncio.create_task(client._process_log_messages())
+        await asyncio.sleep(0.05)
+        process_task.cancel()
+        try:
+            await process_task
+        except asyncio.CancelledError:
+            pass
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
         client.logger.exception.assert_called_with(
@@ -1137,11 +1174,17 @@ class TestSolanaClient:
 
         async def msg_generator():
             yield unexpected_message
-            raise StopAsyncIteration
+            await asyncio.sleep(0.01)
 
         mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
 
-        await client._process_log_messages()
+        process_task = asyncio.create_task(client._process_log_messages())
+        await asyncio.sleep(0.05)
+        process_task.cancel()
+        try:
+            await process_task
+        except asyncio.CancelledError:
+            pass
 
         mock_log_callback.assert_not_awaited()
         client.logger.warning.assert_any_call(
@@ -1157,20 +1200,20 @@ class TestSolanaClient:
 
         async def msg_generator():
             yield mock_wss_message
-            await asyncio.sleep(0.1)
-            raise asyncio.CancelledError
+            await asyncio.sleep(0.1)  # Simulate waiting for next message
+            # Loop should be cancelled before this point
 
         mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
 
         task = asyncio.create_task(client._process_log_messages())
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.01)  # Allow task to start and process first message
         task.cancel()
 
         with pytest.raises(asyncio.CancelledError):
             await task
 
         client.logger.info.assert_called_with("Log processing task cancelled.")
-        client.log_callback.assert_awaited_once()
+        client.log_callback.assert_awaited_once()  # Should process the first message
 
     # --- Test build_swap_instruction Placeholder ---
     # Mark as async because it uses the async client fixture

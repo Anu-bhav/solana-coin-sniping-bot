@@ -100,8 +100,9 @@ def create_mock_log_notification(
 ) -> LogsNotification:
     """Creates a mock LogsNotification object."""
     log_result = RpcLogsResponse(signature=signature, logs=logs, err=err)
-    # Revert RpcResponseContext instantiation to include value
-    context = RpcResponseContext(slot=1, value=log_result)
+    # Instantiate RpcResponseContext with slot only, assign value after
+    context = RpcResponseContext(slot=1, api_version=None)
+    context.value = log_result
     notification = LogsNotification(subscription=123, result=context)
     return notification
 
@@ -249,8 +250,10 @@ class TestDetectionService:
     ):
         """Test that logs from failed transactions are ignored."""
         sig = Signature.new_unique()
-        # Use TransactionError.AccountInUse based on previous AttributeError
-        mock_error = TransactionError.AccountInUse
+        # Correct AccountInUse mock
+        mock_error = TransactionError(
+            TransactionErrorInstructionError(0, InstructionErrorFieldless.AccountInUse)
+        )
         mock_notification = create_mock_log_notification(sig, ["Log 1"], err=mock_error)
 
         await detection_service._handle_log_message(mock_notification)
