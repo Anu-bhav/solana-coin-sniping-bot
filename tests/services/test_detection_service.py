@@ -14,12 +14,13 @@ from solders.rpc.responses import (
 from solders.transaction_status import (
     EncodedTransactionWithStatusMeta,
     UiTransactionEncoding,
-    TransactionStatusMeta,
+    UiTransactionStatusMeta,  # Renamed from TransactionStatusMeta
     UiTransaction,
     UiMessage,
     UiInnerInstructions,
-    TransactionError,
+    # TransactionError, # Moved import
 )
+from solders.transaction import TransactionError  # Added correct import
 from solders.signature import Signature
 
 # Import the class to test
@@ -118,7 +119,7 @@ def create_mock_tx_details(
         fee_payer = Pubkey.new_unique()
 
     # Simplified mock structure - expand as needed for parsing logic tests
-    mock_meta = TransactionStatusMeta(
+    mock_meta = UiTransactionStatusMeta(  # Renamed from TransactionStatusMeta
         err=None,
         fee=5000,
         pre_balances=[],

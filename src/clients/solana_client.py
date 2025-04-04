@@ -20,7 +20,7 @@ from solders.transaction import Transaction, TransactionError
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 from solders.instruction import Instruction
 
-from solana.rpc.api import AsyncClient
+from solana.rpc.async_api import AsyncClient  # Updated import path
 from solana.rpc.commitment import Commitment, Confirmed, Finalized
 from solana.rpc.core import RPCException
 from solana.rpc.websocket_api import SolanaWsClientProtocol, connect
