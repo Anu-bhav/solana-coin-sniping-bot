@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-04-04
+### Added
+- **Phase 1: Core Clients & Database**
+    - Implemented `DatabaseManager` (`database/database_manager.py`) for SQLite interactions.
+    - Added basic unit tests for `DatabaseManager` (`tests/database/test_manager.py`).
+    - Implemented `SolanaClient` (`src/clients/solana_client.py`) for interacting with Solana RPC.
+    - Added basic unit tests for `SolanaClient` (`tests/clients/test_solana_client.py`).
+    - Implemented `HttpClient` (`src/clients/http_client.py`) using `aiohttp` for general HTTP requests.
+    - Added basic unit tests for `HttpClient` (`tests/clients/test_http_client.py`).
+    - Defined database schema in `database/schema.sql`.
+
+### Changed
+- Updated project status to reflect Phase 1 completion and Phase 2 start.
+
 ## [0.1.0] - 2025-03-31
 ### Added
 - Initial project structure setup (Phase 0).

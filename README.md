@@ -6,8 +6,8 @@ A configurable Python bot designed to automatically detect, filter, and trade ne
 
 ## Current Status
 
-- **Phase:** Phase 0: Strategic Foundation & Prerequisite Setup (Complete)
-- **Next Phase:** Phase 1: Core Service Implementation (Detection & DB)
+- **Phase:** Phase 1: Core Clients & Database (Complete)
+- **Next Phase:** Phase 2: Detection & Filtering Services (In Progress)
 
 ## Overview
 
