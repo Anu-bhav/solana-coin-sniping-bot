@@ -727,6 +727,8 @@ class TestSolanaClient:
         simulated_tx = call_args[0]
         assert isinstance(simulated_tx, VersionedTransaction)
         # Access fee payer through the message object using the correct attribute '.payer'
+        print(f"DEBUG: simulated_tx.message type: {type(simulated_tx.message)}")
+        print(f"DEBUG: simulated_tx.message attributes: {dir(simulated_tx.message)}")
         assert simulated_tx.message.payer == client.keypair.pubkey()
         client.logger.debug.assert_any_call(
             "Transaction created and signed by 2 signers."
