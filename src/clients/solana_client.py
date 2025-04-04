@@ -345,11 +345,11 @@ class SolanaClient:
             # 4. Create and Sign Transaction using new_signed_with_payer
             # This requires the fee payer (self.keypair) and any other initial signers, plus the blockhash.
             # Note: `all_signers` includes self.keypair already.
-            # Positional args: message, signer, signing_keypairs, recent_blockhash
+            # Positional args: instructions, payer_pubkey, signing_keypairs, recent_blockhash
             tx = Transaction.new_signed_with_payer(
-                message,
-                self.keypair,  # Fee payer signer
-                all_signers,  # All signers including fee payer
+                full_instructions,  # Pass instructions list directly
+                self.keypair.pubkey(),  # Payer public key
+                all_signers,  # List of Keypair signers
                 recent_blockhash,
             )
             # No need for separate tx.sign or tx.sign_partial calls now
