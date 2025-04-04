@@ -257,18 +257,25 @@ class TestSolanaClient:
         # Assign mocks directly as client fixture now yields the instance
         client.rpc_client = AsyncMock()  # Need a mock rpc_client for close()
         client.wss_connection = mock_websocket_connect.mock_protocol
-        client.log_subscription_task = AsyncMock()
-        client.log_subscription_task.done.return_value = False
+        # Use an AsyncMock, but don't mock done() - let it exist
+        mock_task = AsyncMock(name="log_task_mock")
+        client.log_subscription_task = mock_task
+        task_to_check = client.log_subscription_task  # Capture the mock task
 
         await client.close()
 
-        client.log_subscription_task.cancel.assert_called_once()
+        # Assert cancel was called on the captured mock task
+        task_to_check.cancel.assert_called_once()
         mock_websocket_connect.mock_protocol.close.assert_called_once()
         client.rpc_client.close.assert_called_once()  # Check close on the mock
         client.logger.info.assert_any_call("Closing SolanaClient connections...")
         client.logger.info.assert_any_call("SolanaClient connections closed.")
+        # Check the log message confirming cancellation (optional but good)
+        client.logger.info.assert_any_call(
+            "Log subscription task cancelled successfully."
+        )
 
-    # --- Test RPC Wrappers ---
+    # --- Test RPC Wrappers --- # Removed duplicate comment and fixed indentation
 
     async def test_get_balance(self, client):
         """Tests the get_balance wrapper."""
@@ -539,10 +546,10 @@ class TestSolanaClient:
         assert result.value.err is None
         assert result.value.logs == mock_sim_resp_ok.value.logs
         assert result.context.slot == mock_sim_resp_ok.context.slot
-
+        # Remove the assert False
         client.logger.info.assert_any_call("Dry running transaction...")
         client.logger.info.assert_any_call(
-            f"Transaction simulation result: Err={result.value.err}, Logs={result.value.logs}"  # Use result directly
+            f"Transaction simulation result: Err={result.value.err}, Logs={result.value.logs}"
         )
 
     async def test_create_sign_send_transaction_dry_run_err(
@@ -568,9 +575,9 @@ class TestSolanaClient:
         client.logger.info.assert_any_call("Dry running transaction...")
         # Correct the expected error log message
         # Correct the expected error log message
-        # Correct the expected error log message using the actual result
+        # Assert the logger call for the error simulation
         client.logger.error.assert_called_with(
-            f"Transaction simulation failed: {result.value.err}"
+            f"Transaction simulation failed: {mock_sim_resp_err.value.err}"  # Use the mock error response value
         )
 
     async def test_create_sign_send_transaction_send_skip_confirm(
@@ -580,9 +587,25 @@ class TestSolanaClient:
         client.rpc_client.get_latest_blockhash = AsyncMock(
             return_value=mock_blockhash_resp
         )
+        # Mock send_raw_transaction on the underlying rpc_client
         client.rpc_client.send_raw_transaction = AsyncMock(return_value=mock_send_resp)
         client.rpc_client.simulate_transaction = AsyncMock()
         client.confirm_transaction = AsyncMock()  # Mock the instance method
+
+        # Patch the retry wrapper for this test
+        async def mock_retry_wrapper(func, *args, **kwargs):
+            # Directly call the mocked underlying function
+            if func == client.rpc_client.send_raw_transaction:
+                return await func(*args, **kwargs)
+            elif func == client.rpc_client.simulate_transaction:
+                # Simulate shouldn't be called here, but handle just in case
+                return await func(*args, **kwargs)
+            elif func == client.rpc_client.get_latest_blockhash:
+                return await func(*args, **kwargs)
+            # Add other wrapped functions if necessary for other tests
+            raise NotImplementedError(f"Retry wrapper mock doesn't handle {func}")
+
+        client._make_rpc_call_with_retry = AsyncMock(side_effect=mock_retry_wrapper)
 
         signature = await client.create_sign_send_transaction(
             mock_instructions, dry_run=False, skip_confirmation=True
@@ -614,9 +637,21 @@ class TestSolanaClient:
         client.rpc_client.get_latest_blockhash = AsyncMock(
             return_value=mock_blockhash_resp
         )
+        # Mock send_raw_transaction on the underlying rpc_client
         client.rpc_client.send_raw_transaction = AsyncMock(return_value=mock_send_resp)
         client.rpc_client.simulate_transaction = AsyncMock()
         # Patch confirm_transaction directly on the instance for this test
+
+        # Patch the retry wrapper for this test
+        async def mock_retry_wrapper(func, *args, **kwargs):
+            if func == client.rpc_client.send_raw_transaction:
+                return await func(*args, **kwargs)
+            elif func == client.rpc_client.get_latest_blockhash:
+                return await func(*args, **kwargs)
+            # Add other wrapped functions if necessary
+            raise NotImplementedError(f"Retry wrapper mock doesn't handle {func}")
+
+        client._make_rpc_call_with_retry = AsyncMock(side_effect=mock_retry_wrapper)
         with patch.object(
             client, "confirm_transaction", new_callable=AsyncMock
         ) as mock_confirm:
@@ -732,9 +767,19 @@ class TestSolanaClient:
         client.rpc_client.get_latest_blockhash = AsyncMock(
             return_value=mock_blockhash_resp
         )
+        # Mock send_raw_transaction on the underlying rpc_client
         client.rpc_client.send_raw_transaction = AsyncMock(side_effect=mock_exception)
         client.confirm_transaction = AsyncMock()
 
+        # Patch the retry wrapper for this test
+        async def mock_retry_wrapper(func, *args, **kwargs):
+            if func == client.rpc_client.send_raw_transaction:
+                return await func(*args, **kwargs)
+            elif func == client.rpc_client.get_latest_blockhash:
+                return await func(*args, **kwargs)
+            raise NotImplementedError(f"Retry wrapper mock doesn't handle {func}")
+
+        client._make_rpc_call_with_retry = AsyncMock(side_effect=mock_retry_wrapper)
         with pytest.raises(RPCException) as exc_info:
             await client.create_sign_send_transaction(
                 mock_instructions, dry_run=False, skip_confirmation=False
@@ -1024,14 +1069,17 @@ class TestSolanaClient:
     async def test_close_wss_connection_with_task(self, client, mock_websocket_connect):
         """Tests closing WSS connection when a subscription task is active."""
         client.wss_connection = mock_websocket_connect.mock_protocol
-        mock_task = AsyncMock()
-        mock_task.done.return_value = False
+
+        # Use an AsyncMock, but don't mock done() - let it exist
+        mock_task = AsyncMock(name="log_task_mock")
         client.log_subscription_task = mock_task
+        task_to_check = client.log_subscription_task  # Capture the mock task
         client.log_callback = AsyncMock()
 
         await client.close_wss_connection()
 
-        mock_task.cancel.assert_called_once()
+        # Assert cancel was called on the captured mock task
+        task_to_check.cancel.assert_called_once()
         mock_websocket_connect.mock_protocol.close.assert_awaited_once()
         assert client.wss_connection is None
         assert client.log_subscription_task is None
@@ -1169,7 +1217,14 @@ class TestSolanaClient:
         first_connection = client.wss_connection
         assert first_task is not None
         assert first_connection is not None
-        first_task.cancel = MagicMock()
+        # Mock the cancel method *on* the first_task mock object
+        # Ensure first_task is actually an AsyncMock before assigning to its cancel attr
+        assert isinstance(first_task, AsyncMock)
+        first_task.cancel = AsyncMock(
+            name="first_task_cancel"
+        )  # Mock the cancel method
+        original_cancel_mock = first_task.cancel  # Capture the *mocked* cancel method
+        # Remove the erroneous lines left over from the previous diff
         first_connection.close = AsyncMock()
 
         mock_websocket_connect.reset_mock()
@@ -1191,17 +1246,13 @@ class TestSolanaClient:
 
         assert first_task != second_task
         assert first_connection != second_connection
-        first_task.cancel.assert_called_once()
+        original_cancel_mock.assert_called_once()  # Assert on the original cancel mock
         first_connection.close.assert_awaited_once()
         mock_websocket_connect.assert_called_once()
         new_mock_ws_protocol.logs_subscribe.assert_awaited_once()
         assert client.log_callback == second_callback
 
-        second_task.cancel()
-        try:
-            await second_task
-        except asyncio.CancelledError:
-            pass
+        # Cleanup is handled by pytest-asyncio or fixture teardown, remove manual cancel
 
     async def test_process_log_messages_calls_callback(
         self,
