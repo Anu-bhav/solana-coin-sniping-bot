@@ -20,19 +20,14 @@ from solders.rpc.responses import (
     SendTransactionResp,
     GetSignatureStatusesResp,
     RpcBlockhash,
-    RpcTokenAccountBalance,  # Keep for now
-    RpcSupply,  # Keep for now
+    RpcTokenAccountBalance,
+    RpcSupply,
     RpcSimulateTransactionResult,
-    # RpcConfirmedTransactionStatusWithSignature, # Removed
+    RpcConfirmedTransactionStatusWithSignature,  # Re-added
 )
-from solders.account_decoder import UiTokenAmount  # Correct import location
-from solders.transaction_status import (
-    TransactionStatus,
-    TransactionConfirmationStatus,
-    InstructionError,  # Import the enum
-    TransactionErrorInstructionError,  # Import the wrapper
-    # Do not import specific variants like Custom or AccountInUse
-)
+from solders.account_decoder import UiTokenAmount
+
+# Removed imports from solders.transaction_status
 from solders.transaction import TransactionError, Transaction
 import time
 from solders.hash import Hash
@@ -635,11 +630,8 @@ class TestSolanaClient:
     ):
         """Tests handling of TransactionError (like preflight failure) during sending."""
         preflight_failure = solders_errors.SendTransactionPreflightFailureMessage(
-            # Use structure: TransactionError(TransactionErrorInstructionError(index, InstructionError.Variant))
-            # Assuming InstructionError(1) implies a Custom error variant
-            TransactionError(
-                TransactionErrorInstructionError(0, InstructionError.Custom(1))
-            ),
+            # Revert to attribute access
+            TransactionError.InstructionError(0, 1),
             logs=[],
             units_consumed=0,
         )
@@ -667,33 +659,40 @@ class TestSolanaClient:
         """Tests successful transaction confirmation at Finalized commitment."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
+        # Revert to using RpcConfirmedTransactionStatusWithSignature
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
-            value=[  # List should contain TransactionStatus objects
-                TransactionStatus(
-                    slot=10, confirmations=None, err=None, confirmation_status=None
+            value=[
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
+                    slot=10,
+                    confirmations=None,
+                    err=None,
+                    confirmation_status=None,
                 )
             ],
         )
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                TransactionStatus(
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
                     slot=11,
                     confirmations=10,
                     err=None,
-                    confirmation_status=TransactionConfirmationStatus.Confirmed,  # Use enum
+                    confirmation_status=Confirmed,
                 )
             ],
         )
         resp_finalized = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=3),
             value=[
-                TransactionStatus(
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
                     slot=12,
                     confirmations=32,
                     err=None,
-                    confirmation_status=TransactionConfirmationStatus.Finalized,  # Use enum
+                    confirmation_status=Finalized,
                 )
             ],
         )
@@ -734,19 +733,24 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                TransactionStatus(
-                    slot=10, confirmations=None, err=None, confirmation_status=None
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
+                    slot=10,
+                    confirmations=None,
+                    err=None,
+                    confirmation_status=None,
                 )
             ],
         )
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                TransactionStatus(
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
                     slot=11,
                     confirmations=10,
                     err=None,
-                    confirmation_status=TransactionConfirmationStatus.Confirmed,  # Use enum
+                    confirmation_status=Confirmed,
                 )
             ],
         )
@@ -770,18 +774,17 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        # Access variant via enum: InstructionError.Custom(5)
-        mock_tx_error = TransactionError(
-            TransactionErrorInstructionError(0, InstructionError.Custom(5))
-        )
+        # Revert to attribute access
+        mock_tx_error = TransactionError.InstructionError(0, 5)
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                TransactionStatus(
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
                     slot=10,
                     confirmations=None,
                     err=mock_tx_error,
-                    confirmation_status=TransactionConfirmationStatus.Finalized,  # Use enum
+                    confirmation_status=Finalized,
                 )
             ],
         )
@@ -807,8 +810,12 @@ class TestSolanaClient:
         resp_processing = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                TransactionStatus(
-                    slot=10, confirmations=None, err=None, confirmation_status=None
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
+                    slot=10,
+                    confirmations=None,
+                    err=None,
+                    confirmation_status=None,
                 )
             ],
         )
