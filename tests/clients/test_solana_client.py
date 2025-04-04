@@ -21,7 +21,7 @@ from solders.rpc.responses import (
     GetSignatureStatusesResp,
     RpcConfirmedTransactionStatusWithSignature,  # Import the correct type
     RpcBlockhash,  # Added import
-    RpcTokenAmount,  # Added import
+    RpcTokenAccountBalance,  # Import correct type
     # TransactionErrorType, # Moved import
 )
 from solders.transaction import (
@@ -284,7 +284,8 @@ class TestSolanaClient:
         # Corrected: Pass RpcTokenAmount directly to value
         mock_response = GetTokenSupplyResp(
             context=RpcResponseContext(slot=1),
-            value=RpcTokenAmount(  # Assuming RpcTokenAmount is the correct type based on context
+            # Corrected: Use RpcTokenAccountBalance for supply value as well (best guess)
+            value=RpcTokenAccountBalance(
                 amount="1000000", decimals=6, ui_amount=1.0, ui_amount_string="1.0"
             ),
         )
@@ -304,7 +305,8 @@ class TestSolanaClient:
         # Corrected: Pass RpcTokenAmount directly to value
         mock_response = GetTokenAccountBalanceResp(
             context=RpcResponseContext(slot=1),
-            value=RpcTokenAmount(  # Assuming RpcTokenAmount is the correct type based on context
+            # Corrected: Use RpcTokenAccountBalance
+            value=RpcTokenAccountBalance(
                 amount="500", decimals=6, ui_amount=0.0005, ui_amount_string="0.0005"
             ),
         )
