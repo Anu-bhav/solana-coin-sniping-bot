@@ -726,25 +726,36 @@ class TestSolanaClient:
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
         # Use TransactionStatus, remove 'confirmations'
-        resp_processing = GetSignatureStatusesResp(
+        # Add more processing steps to avoid StopAsyncIteration
+        resp_processing1 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
         )
-        resp_confirmed = GetSignatureStatusesResp(
+        resp_processing2 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
                 TransactionStatus(
                     slot=11,
+                    err=None,
+                    confirmation_status=TransactionConfirmationStatus.Processed,
+                )
+            ],
+        )
+        resp_confirmed = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=3),
+            value=[
+                TransactionStatus(
+                    slot=12,
                     err=None,
                     confirmation_status=TransactionConfirmationStatus.Confirmed,
                 )
             ],
         )
         resp_finalized = GetSignatureStatusesResp(
-            context=RpcResponseContext(slot=3),
+            context=RpcResponseContext(slot=4),
             value=[
                 TransactionStatus(
-                    slot=12,
+                    slot=13,
                     err=None,
                     confirmation_status=TransactionConfirmationStatus.Finalized,
                 )
@@ -752,7 +763,12 @@ class TestSolanaClient:
         )
 
         client.rpc_client.get_signature_statuses = AsyncMock(
-            side_effect=[resp_processing, resp_confirmed, resp_finalized]
+            side_effect=[
+                resp_processing1,
+                resp_processing2,
+                resp_confirmed,
+                resp_finalized,
+            ]
         )
 
         result = await client.confirm_transaction(
@@ -784,15 +800,26 @@ class TestSolanaClient:
         """Tests successful transaction confirmation at Confirmed commitment."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        resp_processing = GetSignatureStatusesResp(
+        # Add more processing steps
+        resp_processing1 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
         )
-        resp_confirmed = GetSignatureStatusesResp(
+        resp_processing2 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
                 TransactionStatus(
                     slot=11,
+                    err=None,
+                    confirmation_status=TransactionConfirmationStatus.Processed,
+                )
+            ],
+        )
+        resp_confirmed = GetSignatureStatusesResp(
+            context=RpcResponseContext(slot=3),
+            value=[
+                TransactionStatus(
+                    slot=12,
                     err=None,
                     confirmation_status=TransactionConfirmationStatus.Confirmed,
                 )
@@ -800,7 +827,7 @@ class TestSolanaClient:
         )
 
         client.rpc_client.get_signature_statuses = AsyncMock(
-            side_effect=[resp_processing, resp_confirmed]
+            side_effect=[resp_processing1, resp_processing2, resp_confirmed]
         )
 
         result = await client.confirm_transaction(
@@ -836,13 +863,14 @@ class TestSolanaClient:
 
         client.rpc_client.get_signature_statuses = AsyncMock(return_value=resp_failed)
 
-        with pytest.raises(TransactionError) as exc_info:
+        # Expect the specific error type raised by the client now
+        with pytest.raises(TransactionErrorInstructionError) as exc_info:
             await client.confirm_transaction(
                 mock_sig_str, commitment=Finalized, sleep_seconds=0.05
             )
 
-        # Check if the raised exception contains the expected error structure
-        assert isinstance(exc_info.value.err, TransactionErrorInstructionError)
+        # Check the details of the raised exception directly
+        assert exc_info.value.index == 0
         assert exc_info.value.err.index == 0
         assert isinstance(exc_info.value.err.err, InstructionErrorCustom)
         assert exc_info.value.err.err.code == 5
