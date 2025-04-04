@@ -6,7 +6,7 @@ import pytest
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solders.rpc import errors  # Updated import style
-from solders.rpc.commitment import Confirmed, Finalized  # Commitment levels
+from solana.rpc.commitment import Confirmed, Finalized  # Commitment levels
 
 from solders.rpc.responses import (
     GetBalanceResp,
@@ -29,7 +29,7 @@ from solders.transaction import (
 import time  # Import time for timeout test
 from solders.hash import Hash
 from solders.signature import Signature
-from solders.transaction_status import SignatureStatus  # Correct import location
+from solders.solders import SignatureStatus
 from solders.instruction import Instruction, AccountMeta
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 
