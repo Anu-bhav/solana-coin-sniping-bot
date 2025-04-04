@@ -97,9 +97,7 @@ async def mock_async_client():  # Made fixture async
         mock_client.return_value.commitment = Confirmed
         mock_client.return_value.close = AsyncMock()
         yield mock_client  # Yield the mock itself
-        mock_client.return_value.commitment = Confirmed
-        mock_client.return_value.close = AsyncMock()  # Mock the close method
-        yield mock_client
+        # Removed second yield
 
 
 @pytest.fixture(autouse=True)
@@ -284,6 +282,7 @@ class TestSolanaClient:
         # Corrected assertion: Access blockhash directly from value
         assert result.value.blockhash == mock_hash
         assert result.value.last_valid_block_height == 100
+        # Removed incorrect assert result == mock_response
         client.logger.debug.assert_called_once()
 
     async def test_get_token_supply(self, client):
@@ -822,11 +821,12 @@ class TestSolanaClient:
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(  # Ensure confirmations is not present
+                RpcConfirmedTransactionStatusWithSignature(
                     signature=Signature.new_unique(),
                     slot=11,
                     err=None,
                     confirmation_status=Confirmed,
+                    confirmations=10,  # Add confirmations
                 )
             ],
         )
@@ -857,11 +857,12 @@ class TestSolanaClient:
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(  # Ensure confirmations is not present
+                RpcConfirmedTransactionStatusWithSignature(
                     signature=Signature.new_unique(),
                     slot=10,
                     err=mock_tx_error,
                     confirmation_status=Finalized,
+                    confirmations=None,  # Add confirmations
                 )
             ],
         )
@@ -1361,22 +1362,24 @@ class TestSolanaClient:
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(  # Ensure confirmations is not present
+                RpcConfirmedTransactionStatusWithSignature(
                     signature=Signature.new_unique(),
                     slot=11,
                     err=None,
                     confirmation_status=Confirmed,
+                    confirmations=10,  # Add confirmations
                 )
             ],
         )
         resp_finalized = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=3),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(  # Ensure confirmations is not present
+                RpcConfirmedTransactionStatusWithSignature(
                     signature=Signature.new_unique(),
                     slot=12,
                     err=None,
                     confirmation_status=Finalized,
+                    confirmations=32,  # Add confirmations
                 )
             ],
         )
@@ -1430,11 +1433,12 @@ class TestSolanaClient:
         resp_confirmed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(  # Ensure confirmations is not present
+                RpcConfirmedTransactionStatusWithSignature(
                     signature=Signature.new_unique(),
                     slot=11,
                     err=None,
                     confirmation_status=Confirmed,
+                    confirmations=10,  # Add confirmations
                 )
             ],
         )
@@ -1465,11 +1469,12 @@ class TestSolanaClient:
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
-                RpcConfirmedTransactionStatusWithSignature(  # Use correct type
-                    signature=Signature.new_unique(),  # Added missing signature
+                RpcConfirmedTransactionStatusWithSignature(
+                    signature=Signature.new_unique(),
                     slot=10,
                     err=mock_tx_error,
                     confirmation_status=Finalized,
+                    confirmations=None,  # Add confirmations
                 )
             ],
         )
@@ -1496,7 +1501,7 @@ class TestSolanaClient:
             context=RpcResponseContext(slot=1),
             value=[
                 RpcConfirmedTransactionStatusWithSignature(
-                    signature=Signature.new_unique(),  # Added missing signature
+                    signature=Signature.new_unique(),
                     slot=10,
                     err=None,
                     confirmation_status=None,
