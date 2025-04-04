@@ -263,8 +263,8 @@ class TestDetectionService:
         """Test that logs from failed transactions are ignored."""
         sig = Signature.new_unique()
         mock_notification = create_mock_log_notification(
-            sig, ["Log 1"], err=TransactionError.AccountInUse
-        )  # Example error
+            sig, ["Log 1"], err=TransactionError.AccountInUse  # Assume nested structure
+        )
 
         await detection_service._handle_log_message(mock_notification)
 

@@ -8,7 +8,6 @@ from solders.pubkey import Pubkey
 from solders.rpc import errors as solders_errors  # Alias to avoid name clash
 from solana.rpc.core import RPCException  # Import the correct exception
 from solana.rpc.commitment import Confirmed, Finalized  # Commitment levels
-
 from solders.rpc.responses import (
     GetBalanceResp,
     GetAccountInfoResp,
@@ -280,10 +279,9 @@ class TestSolanaClient:
         client.rpc_client.get_latest_blockhash.assert_awaited_once_with(
             commitment=client.DEFAULT_COMMITMENT
         )
-        # Corrected assertion: Access blockhash directly from value
+        # Corrected assertion again: Access blockhash via value attribute
         assert result.value.blockhash == mock_hash
         assert result.value.last_valid_block_height == 100
-        # Removed incorrect assert result == mock_response
         client.logger.debug.assert_called_once()
 
     async def test_get_token_supply(self, client):
@@ -293,11 +291,13 @@ class TestSolanaClient:
         mock_response = GetTokenSupplyResp(
             context=RpcResponseContext(slot=1),
             # Corrected: Use RpcSupply
+            # Use UiTokenAmount based on TypeError
+            # Revert to RpcSupply, ensure args are correct
             value=RpcSupply(
                 total=1000000000000,
                 circulating=500000000000,
                 non_circulating=500000000000,
-                non_circulating_accounts=[],  # Added missing argument
+                non_circulating_accounts=[],
             ),
         )
         client.rpc_client.get_token_supply = AsyncMock(return_value=mock_response)
@@ -317,10 +317,9 @@ class TestSolanaClient:
         mock_response = GetTokenAccountBalanceResp(
             context=RpcResponseContext(slot=1),
             # Corrected: Use RpcTokenAccountBalance
-            value=RpcTokenAccountBalance(
-                amount="500",
-                address=Pubkey.new_unique(),  # Added missing address argument
-            ),
+            # Revert to RpcTokenAccountBalance, add missing address
+            # Revert to RpcTokenAccountBalance, ensure args are correct
+            value=RpcTokenAccountBalance(amount="500", address=Pubkey.new_unique()),
         )
         client.rpc_client.get_token_account_balance = AsyncMock(
             return_value=mock_response
@@ -338,7 +337,7 @@ class TestSolanaClient:
         """Tests the get_parsed_transaction wrapper."""
         mock_sig_str = str(Signature.new_unique())
         # Mock a complex response structure as needed
-        mock_response = GetTransactionResp(meta=None)  # Kept transaction removed
+        mock_response = GetTransactionResp()  # Removed meta argument
         client.rpc_client.get_transaction = AsyncMock(return_value=mock_response)
 
         result = await client.get_parsed_transaction(mock_sig_str, commitment=Finalized)
@@ -861,9 +860,9 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        mock_tx_error = TransactionError.InstructionError(
-            0, 5
-        )  # Assume nested structure
+        mock_tx_error = TransactionError(
+            solders_errors.InstructionError(0, 5)
+        )  # Wrap specific error
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
@@ -1476,9 +1475,9 @@ class TestSolanaClient:
         """Tests transaction confirmation when the transaction failed."""
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
-        mock_tx_error = TransactionError.InstructionError(
-            0, 5
-        )  # Assume nested structure
+        mock_tx_error = TransactionError(
+            solders_errors.InstructionError(0, 5)
+        )  # Wrap specific error
         resp_failed = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=1),
             value=[
@@ -1487,7 +1486,7 @@ class TestSolanaClient:
                     slot=10,
                     err=mock_tx_error,
                     confirmation_status=Finalized,
-                    confirmations=None,  # Add confirmations
+                    # Removed confirmations argument
                 )
             ],
         )
