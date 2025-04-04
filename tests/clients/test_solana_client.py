@@ -29,9 +29,9 @@ from solders.transaction import (
 import time  # Import time for timeout test
 from solders.hash import Hash
 from solders.signature import Signature
-from solana.rpc.commitment import (
+from solana.rpc.responses import (
     SignatureStatus,
-)  # Try importing from solana.rpc.commitment
+)
 from solders.instruction import Instruction, AccountMeta
 
 # Target module for patching
