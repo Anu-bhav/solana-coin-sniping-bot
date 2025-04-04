@@ -87,27 +87,30 @@ def mock_logger():
 
 @pytest_asyncio.fixture()
 async def mock_async_client_gen():
-    """Mocks solana.rpc.api.AsyncClient such that calling it returns a mock instance."""
-    mock_instance = AsyncMock(
-        name="MockAsyncClientInstance"
-    )  # Give it a name for clarity
-    mock_instance.rpc_url = MOCK_RPC_URL
-    mock_instance.commitment = Confirmed
-    mock_instance.close = AsyncMock()
-    # Configure methods used in tests
-    mock_instance.get_balance = AsyncMock()
-    mock_instance.get_account_info = AsyncMock()
-    mock_instance.get_latest_blockhash = AsyncMock()
-    mock_instance.get_token_supply = AsyncMock()
-    mock_instance.get_token_account_balance = AsyncMock()
-    mock_instance.get_transaction = AsyncMock()
-    mock_instance.simulate_transaction = AsyncMock()
-    mock_instance.send_raw_transaction = AsyncMock()
-    mock_instance.get_signature_statuses = AsyncMock()
+    """Mocks solana.rpc.api.AsyncClient factory and yields the factory mock."""
+    with patch(
+        f"{TARGET_MODULE}.AsyncClient", new_callable=AsyncMock
+    ) as mock_client_factory:
+        # Configure the instance that the factory mock will return when called
+        mock_instance = AsyncMock(name="MockAsyncClientInstance")
+        mock_instance.rpc_url = MOCK_RPC_URL
+        mock_instance.commitment = Confirmed
+        mock_instance.close = AsyncMock()
+        # Configure methods used in tests
+        mock_instance.get_balance = AsyncMock()
+        mock_instance.get_account_info = AsyncMock()
+        mock_instance.get_latest_blockhash = AsyncMock()
+        mock_instance.get_token_supply = AsyncMock()
+        mock_instance.get_token_account_balance = AsyncMock()
+        mock_instance.get_transaction = AsyncMock()
+        mock_instance.simulate_transaction = AsyncMock()
+        mock_instance.send_raw_transaction = AsyncMock()
+        mock_instance.get_signature_statuses = AsyncMock()
 
-    # Patch AsyncClient so that calling it *synchronously* returns mock_instance
-    with patch(f"{TARGET_MODULE}.AsyncClient", return_value=mock_instance):
-        yield mock_instance  # Yield the instance for tests to use/assert against
+        # Set the factory's return_value to be the configured instance mock
+        mock_client_factory.return_value = mock_instance
+        # Yield the factory mock itself
+        yield mock_client_factory
 
 
 @pytest.fixture(autouse=True)
@@ -137,11 +140,18 @@ def mock_websocket_connect():
 
         mock_ws_protocol.__aiter__ = mock_aiter  # Assign the async generator function
 
-        # The connect mock should return an awaitable that resolves to the protocol
-        async def connect_side_effect(*args, **kwargs):
-            return mock_ws_protocol
+        # The connect mock should return an async generator that yields the protocol
+        async def connect_generator(*args, **kwargs):
+            yield mock_ws_protocol
+            # Keep yielding control or stop after one yield if appropriate
+            # For this mock, yielding once is likely sufficient
+            # await asyncio.sleep(0) # Example if needed
 
-        mock_connect.side_effect = connect_side_effect
+        # Set the return_value of the mock_connect (which replaces the original connect)
+        # to be the result of *calling* our async generator function.
+        # This ensures that when the code calls connect(), it gets back the
+        # async iterator needed for `async for`.
+        mock_connect.return_value = connect_generator()
         mock_connect.mock_protocol = mock_ws_protocol  # Keep reference for tests
         yield mock_connect
 
@@ -167,10 +177,10 @@ class TestSolanaClient:
 
         # mock_async_client_gen fixture applies the patch
         instance = SolanaClient(mock_config, mock_logger)
-        # Ensure the mock was assigned correctly during init
-        assert (
-            instance.rpc_client is mock_async_client_gen
-        )  # Compare with the yielded instance
+        # Ensure the mock factory was called and the instance has the correct mock client
+        # mock_async_client_gen is the factory mock yielded by the fixture
+        mock_async_client_gen.assert_called_once()
+        assert instance.rpc_client is mock_async_client_gen.return_value
         yield instance
 
     # --- Test __init__ ---
@@ -201,12 +211,13 @@ class TestSolanaClient:
             f"Loaded keypair for public key: {MOCK_PUBLIC_KEY}"
         )
 
-        # Check AsyncClient factory was called
+        # Check AsyncClient factory was called correctly
+        # mock_async_client_gen is the factory mock now
         mock_async_client_gen.assert_called_once_with(
             MOCK_RPC_URL, commitment=client.DEFAULT_COMMITMENT, timeout=15
         )
-        # Check the instance has the correct mock client
-        assert client.rpc_client == mock_async_client_gen.return_value
+        # Check the instance has the correct mock client (factory's return value)
+        assert client.rpc_client is mock_async_client_gen.return_value
 
         assert client.wss_connection is None
         assert client.log_subscription_task is None
