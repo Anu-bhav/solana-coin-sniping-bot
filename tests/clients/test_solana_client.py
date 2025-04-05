@@ -592,20 +592,7 @@ class TestSolanaClient:
         client.rpc_client.simulate_transaction = AsyncMock()
         client.confirm_transaction = AsyncMock()  # Mock the instance method
 
-        # Patch the retry wrapper for this test
-        async def mock_retry_wrapper(func, *args, **kwargs):
-            # Directly call the mocked underlying function
-            if func == client.rpc_client.send_raw_transaction:
-                return await func(*args, **kwargs)
-            elif func == client.rpc_client.simulate_transaction:
-                # Simulate shouldn't be called here, but handle just in case
-                return await func(*args, **kwargs)
-            elif func == client.rpc_client.get_latest_blockhash:
-                return await func(*args, **kwargs)
-            # Add other wrapped functions if necessary for other tests
-            raise NotImplementedError(f"Retry wrapper mock doesn't handle {func}")
-
-        client._make_rpc_call_with_retry = AsyncMock(side_effect=mock_retry_wrapper)
+        # Removed patch for _make_rpc_call_with_retry
 
         signature = await client.create_sign_send_transaction(
             mock_instructions, dry_run=False, skip_confirmation=True
