@@ -726,10 +726,8 @@ class TestSolanaClient:
         call_args, call_kwargs = client.rpc_client.simulate_transaction.call_args
         simulated_tx = call_args[0]
         assert isinstance(simulated_tx, VersionedTransaction)
-        # Access fee payer through the message object using the correct attribute '.payer'
-        print(f"DEBUG: simulated_tx.message type: {type(simulated_tx.message)}")
-        print(f"DEBUG: simulated_tx.message attributes: {dir(simulated_tx.message)}")
-        assert simulated_tx.message.payer == client.keypair.pubkey()
+        # Access fee payer via the account_keys list (index 0)
+        assert simulated_tx.message.account_keys[0] == client.keypair.pubkey()
         client.logger.debug.assert_any_call(
             "Transaction created and signed by 2 signers."
         )
@@ -1219,14 +1217,7 @@ class TestSolanaClient:
         first_connection = client.wss_connection
         assert first_task is not None
         assert first_connection is not None
-        # Mock the cancel method *on* the first_task mock object
-        # Ensure first_task is actually an AsyncMock before assigning to its cancel attr
-        assert isinstance(first_task, AsyncMock)
-        first_task.cancel = AsyncMock(
-            name="first_task_cancel"
-        )  # Mock the cancel method
-        original_cancel_mock = first_task.cancel  # Capture the *mocked* cancel method
-        # Remove the erroneous lines left over from the previous diff
+        # first_task is a real Task. Mock close on its associated connection.
         first_connection.close = AsyncMock()
 
         mock_websocket_connect.reset_mock()
@@ -1248,7 +1239,8 @@ class TestSolanaClient:
 
         assert first_task != second_task
         assert first_connection != second_connection
-        original_cancel_mock.assert_called_once()  # Assert on the original cancel mock
+        # Assert that the first task was cancelled by the client logic
+        assert first_task.cancelled()
         first_connection.close.assert_awaited_once()
         mock_websocket_connect.assert_called_once()
         new_mock_ws_protocol.logs_subscribe.assert_awaited_once()
