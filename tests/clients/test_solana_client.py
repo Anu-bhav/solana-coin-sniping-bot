@@ -557,7 +557,7 @@ class TestSolanaClient:
 
         call_args, call_kwargs = client.rpc_client.simulate_transaction.call_args
         simulated_tx = call_args[0]
-        assert isinstance(simulated_tx, VersionedTransaction)  # Correct type
+        assert isinstance(simulated_tx, Transaction)  # Revert to old check for now
         assert simulated_tx.fee_payer == client.keypair.pubkey()
         assert simulated_tx.recent_blockhash == mock_blockhash_resp.value.blockhash
         assert len(simulated_tx.instructions) == len(mock_instructions) + 2

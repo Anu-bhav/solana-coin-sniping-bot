@@ -343,7 +343,8 @@ class SolanaClient:
             )
 
             # 4. Create and Sign VersionedTransaction
-            from solders.transaction import VersionedTransaction # Explicit import
+            from solders.transaction import VersionedTransaction  # Explicit import
+
             # The constructor takes the message and the list of signers (Keypair objects)
             tx = VersionedTransaction(message, all_signers)
 
@@ -380,10 +381,14 @@ class SolanaClient:
                 try:
                     serialized_tx = bytes(tx)
                 except AttributeError:
-                    self.logger.error("VersionedTransaction object missing __bytes__ method!")
-                    raise # Re-raise the original error if __bytes__ also fails
+                    self.logger.error(
+                        "VersionedTransaction object missing __bytes__ method!"
+                    )
+                    raise  # Re-raise the original error if __bytes__ also fails
                 except Exception as e:
-                    self.logger.error(f"Error serializing transaction with bytes(): {e}")
+                    self.logger.error(
+                        f"Error serializing transaction with bytes(): {e}"
+                    )
                     raise
 
                 send_resp = await self._make_rpc_call_with_retry(
@@ -595,7 +600,7 @@ class SolanaClient:
             self.logger.error("Cannot start log subscription, WSS connection failed.")
             return
 
-        if self.log_subscription_task and not self.log_subscription_task.done():
+        if self.log_subscription_task:  # Simplify check: cancel if task exists
             self.logger.warning(
                 "Log subscription task already running. Stopping existing one."
             )
@@ -632,7 +637,7 @@ class SolanaClient:
 
     async def close_wss_connection(self):
         """Closes the WebSocket connection and cancels the subscription task."""
-        if self.log_subscription_task and not self.log_subscription_task.done():
+        if self.log_subscription_task:  # Simplify check: cancel if task exists
             self.logger.info("Cancelling log subscription task...")
             self.log_subscription_task.cancel()
             try:
