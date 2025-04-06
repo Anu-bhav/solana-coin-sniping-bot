@@ -557,8 +557,9 @@ class TestSolanaClient:
 
         call_args, call_kwargs = client.rpc_client.simulate_transaction.call_args
         simulated_tx = call_args[0]
-        assert isinstance(simulated_tx, Transaction)  # Revert to old check for now
-        assert simulated_tx.fee_payer == client.keypair.pubkey()
+        assert isinstance(simulated_tx, VersionedTransaction)  # Check correct type
+        # Access fee payer via the account_keys list (index 0)
+        assert simulated_tx.message.account_keys[0] == client.keypair.pubkey()
         assert simulated_tx.recent_blockhash == mock_blockhash_resp.value.blockhash
         assert len(simulated_tx.instructions) == len(mock_instructions) + 2
         assert isinstance(simulated_tx.instructions[0], Instruction)
@@ -1222,12 +1223,11 @@ class TestSolanaClient:
         assert first_task is not None
         assert first_connection is not None
         # Mock the cancel method *on* the first_task mock object
-        # Ensure first_task is actually an AsyncMock before assigning to its cancel attr
-        assert isinstance(
-            first_task, AsyncMock
-        )  # This will fail, but reverting to original state
-        first_task.cancel = AsyncMock(
-            name="first_task_cancel"
+        # first_task is a real Task. Mock its cancel method directly for assertion.
+        first_task.cancel = (
+            AsyncMock(  # Mock the cancel method on the actual task object
+                name="first_task_cancel"
+            )
         )  # Mock the cancel method
         original_cancel_mock = first_task.cancel  # Capture the *mocked* cancel method
         first_connection.close = AsyncMock()
