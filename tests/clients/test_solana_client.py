@@ -289,19 +289,19 @@ class TestSolanaClient:
         await client.close()
         await asyncio.sleep(0)  # Allow event loop to process cancellation
 
-        # Patch asyncio.Task.cancel to track calls without affecting the mock task
-        with patch("asyncio.Task.cancel", return_value=True) as mock_cancel:
-            await client.close()
-            await asyncio.sleep(0)  # Allow event loop
+        await client.close()
+        await asyncio.sleep(0)  # Allow event loop to process cancellation
 
-            mock_cancel.assert_called_once()  # Check if cancel was called on *any* task
-
-        # Existing assertions
+        # Assert cancel was called on the captured mock task
+        task_to_check.cancel.assert_called_once()
         mock_websocket_connect.mock_protocol.close.assert_called_once()
-        client.rpc_client.close.assert_called_once()
+        client.rpc_client.close.assert_called_once()  # Check close on the mock
         client.logger.info.assert_any_call("Closing SolanaClient connections...")
         client.logger.info.assert_any_call("SolanaClient connections closed.")
-        # We can't reliably assert the "cancelled successfully" log with this patch method
+        # Check the log message confirming cancellation (optional but good)
+        client.logger.info.assert_any_call(
+            "Log subscription task cancelled successfully."
+        )
         # client.logger.info.assert_any_call("Log subscription task cancelled successfully.")
 
     # --- Test RPC Wrappers --- # Removed duplicate comment and fixed indentation
@@ -1082,12 +1082,11 @@ class TestSolanaClient:
         task_to_check = client.log_subscription_task  # Capture the mock task
         client.log_callback = AsyncMock()
 
-        # Patch asyncio.Task.cancel to track calls
-        with patch("asyncio.Task.cancel", return_value=True) as mock_cancel:
-            await client.close_wss_connection()
-            await asyncio.sleep(0)  # Allow event loop
+        await client.close_wss_connection()
+        await asyncio.sleep(0)  # Allow event loop to process cancellation
 
-            mock_cancel.assert_called_once()  # Check if cancel was called on *any* task
+        # Assert cancel was called on the captured mock task
+        task_to_check.cancel.assert_called_once()
         mock_websocket_connect.mock_protocol.close.assert_awaited_once()
         assert client.wss_connection is None
         assert client.log_subscription_task is None
