@@ -263,7 +263,7 @@ class TestSolanaClient:
         task_to_check = client.log_subscription_task  # Capture the mock task
 
         await client.close()
-        await asyncio.sleep(0) # Allow event loop to process cancellation
+        await asyncio.sleep(0)  # Allow event loop to process cancellation
 
         # Assert cancel was called on the captured mock task
         task_to_check.cancel.assert_called_once()
@@ -533,7 +533,7 @@ class TestSolanaClient:
 
         call_args, call_kwargs = client.rpc_client.simulate_transaction.call_args
         simulated_tx = call_args[0]
-        assert isinstance(simulated_tx, Transaction)
+        assert isinstance(simulated_tx, VersionedTransaction)  # Correct type
         assert simulated_tx.fee_payer == client.keypair.pubkey()
         assert simulated_tx.recent_blockhash == mock_blockhash_resp.value.blockhash
         assert len(simulated_tx.instructions) == len(mock_instructions) + 2
@@ -1056,7 +1056,7 @@ class TestSolanaClient:
         client.log_callback = AsyncMock()
 
         await client.close_wss_connection()
-        await asyncio.sleep(0) # Allow event loop to process cancellation
+        await asyncio.sleep(0)  # Allow event loop to process cancellation
 
         # Assert cancel was called on the captured mock task
         task_to_check.cancel.assert_called_once()
@@ -1199,7 +1199,9 @@ class TestSolanaClient:
         assert first_connection is not None
         # Mock the cancel method *on* the first_task mock object
         # Ensure first_task is actually an AsyncMock before assigning to its cancel attr
-        assert isinstance(first_task, AsyncMock) # This will fail, but reverting to original state
+        assert isinstance(
+            first_task, AsyncMock
+        )  # This will fail, but reverting to original state
         first_task.cancel = AsyncMock(
             name="first_task_cancel"
         )  # Mock the cancel method
