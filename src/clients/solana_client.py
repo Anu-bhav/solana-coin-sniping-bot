@@ -343,6 +343,7 @@ class SolanaClient:
             )
 
             # 4. Create and Sign VersionedTransaction
+            from solders.transaction import VersionedTransaction # Explicit import
             # The constructor takes the message and the list of signers (Keypair objects)
             tx = VersionedTransaction(message, all_signers)
 
@@ -375,15 +376,23 @@ class SolanaClient:
                 # Use send_raw_transaction if already serialized, or send_transaction
                 # send_transaction handles serialization and signing again, which is redundant but simpler API
                 # Let's serialize manually for clarity
-                # Serialize the VersionedTransaction directly
-                serialized_tx = tx.serialize()
+                # Try serializing using the __bytes__ dunder method
+                try:
+                    serialized_tx = bytes(tx)
+                except AttributeError:
+                    self.logger.error("VersionedTransaction object missing __bytes__ method!")
+                    raise # Re-raise the original error if __bytes__ also fails
+                except Exception as e:
+                    self.logger.error(f"Error serializing transaction with bytes(): {e}")
+                    raise
+
                 send_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.send_raw_transaction,
-                    serialized_tx,  # Pass serialized VersionedTransaction
+                    serialized_tx,  # Pass serialized bytes
                     opts={
                         "skip_preflight": False,
                         "preflight_commitment": commitment,
-                    },  # Use opts for send_raw_transaction
+                    },
                 )
                 signature = send_resp.value
                 self.logger.info(f"Transaction sent with signature: {signature}")
