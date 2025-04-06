@@ -166,6 +166,30 @@ def mock_asyncio_sleep():
         yield mock_sleep
 
 
+@pytest.fixture
+def mock_tx_error(self):
+    """Provides a mock TransactionError."""
+    # Example: InstructionError at index 0, Custom error code 1
+    return TransactionErrorInstructionError(0, InstructionErrorCustom(1))
+
+
+@pytest.fixture
+def mock_sim_resp_err(self, mock_tx_error):
+    """Provides a mock SimulateTransactionResp with an error."""
+    return SimulateTransactionResp(
+        context=RpcResponseContext(slot=102),
+        value=RpcSimulateTransactionResult(
+            err=mock_tx_error,  # Use the mock TransactionError
+            logs=["Simulated transaction failed"],
+            accounts=None,
+            units_consumed=0,
+            return_data=None,
+            inner_instructions=None,
+            replacement_blockhash=None,
+        ),
+    )
+
+
 # --- Test Class ---
 
 
