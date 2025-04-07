@@ -567,11 +567,12 @@ class TestSolanaClient:
         assert (
             simulated_tx.message.recent_blockhash == mock_blockhash_resp.value.blockhash
         )
-        assert len(simulated_tx.instructions) == len(mock_instructions) + 2
-        assert isinstance(simulated_tx.instructions[0], Instruction)
-        assert isinstance(simulated_tx.instructions[1], Instruction)
-        assert simulated_tx.instructions[2] == mock_instructions[0]
-        assert simulated_tx.instructions[3] == mock_instructions[1]
+        # Access instructions via the message attribute
+        assert len(simulated_tx.message.instructions) == len(mock_instructions) + 2
+        assert isinstance(simulated_tx.message.instructions[0], Instruction)
+        assert isinstance(simulated_tx.message.instructions[1], Instruction)
+        assert simulated_tx.message.instructions[2] == mock_instructions[0]
+        assert simulated_tx.message.instructions[3] == mock_instructions[1]
 
         # Assert specific fields instead of direct object comparison
         assert isinstance(result, SimulateTransactionResp)
