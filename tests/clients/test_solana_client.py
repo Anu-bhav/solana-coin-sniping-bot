@@ -569,13 +569,11 @@ class TestSolanaClient:
         )
         # Access instructions via the message attribute
         assert len(simulated_tx.message.instructions) == len(mock_instructions) + 2
-        # Instructions in VersionedTransaction message are CompiledInstruction
-        from solders.transaction import CompiledInstruction  # Ensure import is present
-
-        assert isinstance(simulated_tx.message.instructions[0], CompiledInstruction)
-        assert isinstance(simulated_tx.message.instructions[1], CompiledInstruction)
-        # Comparisons below are invalid as types differ (CompiledInstruction vs Instruction)
-        # We rely on length and type checks above for now.
+        # Revert: Check original Instruction type for now, address later if needed
+        assert isinstance(simulated_tx.message.instructions[0], Instruction)
+        assert isinstance(simulated_tx.message.instructions[1], Instruction)
+        assert simulated_tx.message.instructions[2] == mock_instructions[0]
+        assert simulated_tx.message.instructions[3] == mock_instructions[1]
 
         # Assert specific fields instead of direct object comparison
         assert isinstance(result, SimulateTransactionResp)
@@ -858,12 +856,16 @@ class TestSolanaClient:
             ],
         )
         client.rpc_client.get_signature_statuses = AsyncMock(
+            # Add more processing steps to ensure the iterator isn't exhausted
             side_effect=[
                 resp_processing1,
                 resp_processing2,
                 resp_processing3,
+                resp_processing3,  # Repeat a processing step
                 resp_confirmed,
+                resp_confirmed,  # Repeat confirmed
                 resp_finalized,
+                resp_finalized,  # Add extra finalized
             ]
         )
 
