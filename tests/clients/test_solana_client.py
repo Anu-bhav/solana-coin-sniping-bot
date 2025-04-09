@@ -294,7 +294,7 @@ class TestSolanaClient:
         await client.close()
         await asyncio.sleep(0)  # Allow event loop to process cancellation
 
-        await client.close()
+        # Remove duplicate close call
         await asyncio.sleep(0)  # Allow event loop to process cancellation
 
         # Assert cancel was called on the captured mock task
@@ -863,15 +863,19 @@ class TestSolanaClient:
         )
         client.rpc_client.get_signature_statuses = AsyncMock(
             # Add more processing steps to ensure the iterator isn't exhausted
+            # Add even more processing steps to ensure the iterator isn't exhausted
             side_effect=[
                 resp_processing1,
                 resp_processing2,
                 resp_processing3,
-                resp_processing3,  # Repeat a processing step
+                resp_processing3,
+                resp_processing3,  # Repeat processing more
                 resp_confirmed,
-                resp_confirmed,  # Repeat confirmed
+                resp_confirmed,
+                resp_confirmed,  # Repeat confirmed more
                 resp_finalized,
-                resp_finalized,  # Add extra finalized
+                resp_finalized,
+                resp_finalized,  # Add more extra finalized
             ]
         )
 
