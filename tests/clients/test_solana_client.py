@@ -8,7 +8,6 @@ from solders.keypair import Keypair
 from solders.pubkey import Pubkey
 from solana.rpc.core import RPCException
 from solana.rpc.commitment import Confirmed, Finalized
-from solders.message import CompiledInstruction  # Import CompiledInstruction
 from solders.rpc.responses import (
     GetBalanceResp,
     GetAccountInfoResp,
