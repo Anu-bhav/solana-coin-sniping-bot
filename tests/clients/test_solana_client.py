@@ -281,10 +281,15 @@ class TestSolanaClient:
         # Assign mocks directly as client fixture now yields the instance
         client.rpc_client = AsyncMock()  # Need a mock rpc_client for close()
         client.wss_connection = mock_websocket_connect.mock_protocol
-        # Use an AsyncMock, but don't mock done() - let it exist
-        mock_task = AsyncMock(name="log_task_mock")
-        client.log_subscription_task = mock_task
-        task_to_check = client.log_subscription_task  # Capture the mock task
+
+        # Create a real task wrapping a mock coroutine
+        async def dummy_coro():
+            await asyncio.sleep(1)  # Simulate work
+
+        mock_coro = AsyncMock(wraps=dummy_coro)
+        real_task = asyncio.create_task(mock_coro())
+        client.log_subscription_task = real_task
+        task_to_check = real_task  # Check the real task
 
         await client.close()
         await asyncio.sleep(0)  # Allow event loop to process cancellation
@@ -293,7 +298,8 @@ class TestSolanaClient:
         await asyncio.sleep(0)  # Allow event loop to process cancellation
 
         # Assert cancel was called on the captured mock task
-        task_to_check.cancel.assert_called_once()
+        # Check if the real task was cancelled
+        assert task_to_check.cancelled()
         mock_websocket_connect.mock_protocol.close.assert_called_once()
         client.rpc_client.close.assert_called_once()  # Check close on the mock
         client.logger.info.assert_any_call("Closing SolanaClient connections...")
@@ -569,11 +575,11 @@ class TestSolanaClient:
         )
         # Access instructions via the message attribute
         assert len(simulated_tx.message.instructions) == len(mock_instructions) + 2
-        # Instructions in VersionedTransaction message are CompiledInstruction
-        assert isinstance(simulated_tx.message.instructions[0], CompiledInstruction)
-        assert isinstance(simulated_tx.message.instructions[1], CompiledInstruction)
-        # Comparisons below are invalid as types differ (CompiledInstruction vs Instruction)
-        # We rely on length and type checks above for now.
+        # Revert: Check original Instruction type for now, address later if needed
+        assert isinstance(simulated_tx.message.instructions[0], Instruction)
+        assert isinstance(simulated_tx.message.instructions[1], Instruction)
+        assert simulated_tx.message.instructions[2] == mock_instructions[0]
+        assert simulated_tx.message.instructions[3] == mock_instructions[1]
 
         # Assert specific fields instead of direct object comparison
         assert isinstance(result, SimulateTransactionResp)
@@ -1085,17 +1091,22 @@ class TestSolanaClient:
         """Tests closing WSS connection when a subscription task is active."""
         client.wss_connection = mock_websocket_connect.mock_protocol
 
-        # Use an AsyncMock, but don't mock done() - let it exist
-        mock_task = AsyncMock(name="log_task_mock")
-        client.log_subscription_task = mock_task
-        task_to_check = client.log_subscription_task  # Capture the mock task
+        # Create a real task wrapping a mock coroutine
+        async def dummy_coro():
+            await asyncio.sleep(1)  # Simulate work
+
+        mock_coro = AsyncMock(wraps=dummy_coro)
+        real_task = asyncio.create_task(mock_coro())
+        client.log_subscription_task = real_task
+        task_to_check = real_task  # Check the real task
         client.log_callback = AsyncMock()
 
         await client.close_wss_connection()
         await asyncio.sleep(0)  # Allow event loop to process cancellation
 
         # Assert cancel was called on the captured mock task
-        task_to_check.cancel.assert_called_once()
+        # Check if the real task was cancelled
+        assert task_to_check.cancelled()
         mock_websocket_connect.mock_protocol.close.assert_awaited_once()
         assert client.wss_connection is None
         assert client.log_subscription_task is None
