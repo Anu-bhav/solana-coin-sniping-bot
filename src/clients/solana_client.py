@@ -15,11 +15,8 @@ from solders.rpc.responses import (
     SimulateTransactionResp,
     SendTransactionResp,
 )
-from solders.transaction import (
-    TransactionError,
-    VersionedTransaction,  # Keep VersionedTransaction
-    # Transaction, # Remove legacy Transaction
-)
+from solders.transaction import TransactionError, VersionedTransaction
+from solders.transaction_status import TransactionConfirmationStatus
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 from solders.message import MessageV0  # Use MessageV0
 
@@ -464,18 +461,31 @@ class SolanaClient:
 
                     current_commitment = status.confirmation_status
                     if current_commitment:
-                        # Check if current commitment level meets or exceeds the desired level
-                        commitment_order = [Confirmed, Finalized]  # Define order
-                        desired_index = (
-                            commitment_order.index(commitment)
-                            if commitment in commitment_order
-                            else -1
-                        )
-                        current_index = (
-                            commitment_order.index(current_commitment)
-                            if current_commitment in commitment_order
-                            else -1
-                        )
+                        # Compare commitment levels based on their order
+                        commitment_order = ["processed", "confirmed", "finalized"]
+                        try:
+                            # Get the string representation of the desired commitment
+                            desired_commitment_str = str(commitment).lower()
+                            desired_index = commitment_order.index(
+                                desired_commitment_str
+                            )
+                        except ValueError:
+                            self.logger.warning(
+                                f"Invalid desired commitment level: {commitment}"
+                            )
+                            desired_index = -1  # Or handle as error
+
+                        try:
+                            # Get the string representation of the current commitment status
+                            current_commitment_str = str(current_commitment).lower()
+                            current_index = commitment_order.index(
+                                current_commitment_str
+                            )
+                        except ValueError:
+                            self.logger.warning(
+                                f"Unknown current commitment status: {current_commitment}"
+                            )
+                            current_index = -1  # Treat unknown/processed as lower level
 
                         if current_index >= desired_index >= 0:
                             self.logger.info(
@@ -499,6 +509,7 @@ class SolanaClient:
                 )
                 raise  # Propagate RPC errors
 
+            await asyncio.sleep(0)  # Yield control before timeout check
             # Check timeout
             if time.monotonic() - start_time > self.timeout:
                 self.logger.error(
