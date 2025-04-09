@@ -570,14 +570,12 @@ class TestSolanaClient:
         # Access instructions via the message attribute
         assert len(simulated_tx.message.instructions) == len(mock_instructions) + 2
         # Instructions in VersionedTransaction message are CompiledInstruction
-        from solders.transaction import CompiledInstruction  # Add import
+        from solders.transaction import CompiledInstruction  # Ensure import is present
 
         assert isinstance(simulated_tx.message.instructions[0], CompiledInstruction)
         assert isinstance(simulated_tx.message.instructions[1], CompiledInstruction)
-        # We cannot directly compare CompiledInstruction with Instruction easily.
-        # For now, let's just check the types and length.
-        # assert simulated_tx.message.instructions[2] == mock_instructions[0] # This comparison is invalid
-        # assert simulated_tx.message.instructions[3] == mock_instructions[1] # This comparison is invalid
+        # Comparisons below are invalid as types differ (CompiledInstruction vs Instruction)
+        # We rely on length and type checks above for now.
 
         # Assert specific fields instead of direct object comparison
         assert isinstance(result, SimulateTransactionResp)
