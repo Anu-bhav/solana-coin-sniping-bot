@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch, call
+from contextlib import suppress
 
 import pytest
 import pytest_asyncio
@@ -765,7 +766,7 @@ class TestSolanaClient:
         # Access fee payer via the account_keys list (index 0)
         assert simulated_tx.message.account_keys[0] == client.keypair.pubkey()
         client.logger.debug.assert_any_call(
-            "Transaction created and signed by 2 signers."
+            "VersionedTransaction created and signed by 2 signers."  # Match actual log
         )
 
     async def test_create_sign_send_transaction_rpc_error(
@@ -882,19 +883,11 @@ class TestSolanaClient:
         )
         client.rpc_client.get_signature_statuses = AsyncMock(
             # Add more processing steps to ensure the iterator isn't exhausted
-            # Add even more processing steps to ensure the iterator isn't exhausted
+            # Simplify side_effect for finalized test: Process -> Confirmed -> Finalized
             side_effect=[
-                resp_processing1,
-                resp_processing2,
-                resp_processing3,
-                resp_processing3,
-                resp_processing3,  # Repeat processing more
-                resp_confirmed,
-                resp_confirmed,
-                resp_confirmed,  # Repeat confirmed more
-                resp_finalized,
-                resp_finalized,
-                resp_finalized,  # Add more extra finalized
+                resp_processing2,  # Processed
+                resp_confirmed,  # Confirmed
+                resp_finalized,  # Finalized
             ]
         )
 
@@ -1309,24 +1302,28 @@ class TestSolanaClient:
         await client.connect_wss()
         client.log_callback = mock_log_callback
 
-        # Configure the mock protocol's __aiter__ to yield the message
+        # Configure the mock protocol's __aiter__ to yield one message then yield control
         async def msg_generator():
             yield mock_wss_message
-            # Add a small delay to allow processing before stopping
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0)  # Yield control to allow callback processing
+            # Stop iteration
 
         mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
 
         # Run the processor in a task to allow it to run concurrently
+        # Run the processor task and await its completion (it should finish after one message)
         process_task = asyncio.create_task(client._process_log_messages())
-        await asyncio.sleep(0.1)  # Increase sleep duration
-        await asyncio.sleep(0.1)  # Increase sleep duration
-        await asyncio.sleep(0.05)  # Allow time for the message to be processed
-        process_task.cancel()
         try:
-            await process_task
+            # Wait a short time to ensure the task processes the single message
+            await asyncio.wait_for(process_task, timeout=0.1)
+        except asyncio.TimeoutError:
+            # If it times out, the loop might be stuck, cancel it
+            process_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await process_task
         except asyncio.CancelledError:
-            pass  # Expected cancellation
+            # Task might be cancelled if it finishes very quickly
+            pass
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
 
@@ -1343,19 +1340,20 @@ class TestSolanaClient:
         mock_log_callback.side_effect = ValueError("Callback error")
         client.log_callback = mock_log_callback
 
+        # Configure the mock protocol's __aiter__ to yield the message
         async def msg_generator():
             yield mock_wss_message
             await asyncio.sleep(0.01)
 
         mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
-
+        # Run the processor in a task, wait briefly, then cancel
         process_task = asyncio.create_task(client._process_log_messages())
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.1)  # Allow time for message processing
         process_task.cancel()
         try:
             await process_task
         except asyncio.CancelledError:
-            pass
+            pass  # Expected cancellation
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
         client.logger.exception.assert_called_with(

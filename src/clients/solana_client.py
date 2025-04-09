@@ -364,6 +364,9 @@ class SolanaClient:
                 self.logger.info(
                     f"Transaction simulation result: Err={simulation_resp.value.err}, Logs={simulation_resp.value.logs}"
                 )
+                self.logger.debug(
+                    f"Checking simulation error: {simulation_resp.value.err} (Type: {type(simulation_resp.value.err)})"
+                )  # DEBUG
                 if simulation_resp.value.err:
                     self.logger.error(
                         f"Transaction simulation failed: {simulation_resp.value.err}"
@@ -461,33 +464,22 @@ class SolanaClient:
 
                     current_commitment = status.confirmation_status
                     if current_commitment:
-                        # Compare commitment levels based on their order
-                        commitment_order = ["processed", "confirmed", "finalized"]
-                        try:
-                            # Get the string representation of the desired commitment
-                            desired_commitment_str = str(commitment).lower()
-                            desired_index = commitment_order.index(
-                                desired_commitment_str
-                            )
-                        except ValueError:
-                            self.logger.warning(
-                                f"Invalid desired commitment level: {commitment}"
-                            )
-                            desired_index = -1  # Or handle as error
+                        # Revert to map/type comparison (Attempt 6)
+                        commitment_map = {
+                            TransactionConfirmationStatus.Processed: 0,  # Assign order
+                            TransactionConfirmationStatus.Confirmed: 1,
+                            TransactionConfirmationStatus.Finalized: 2,
+                        }
+                        commitment_order_map = {
+                            Confirmed: 1,
+                            Finalized: 2,
+                        }
 
-                        try:
-                            # Get the string representation of the current commitment status
-                            current_commitment_str = str(current_commitment).lower()
-                            current_index = commitment_order.index(
-                                current_commitment_str
-                            )
-                        except ValueError:
-                            self.logger.warning(
-                                f"Unknown current commitment status: {current_commitment}"
-                            )
-                            current_index = -1  # Treat unknown/processed as lower level
+                        current_level = commitment_map.get(current_commitment, -1)
+                        # Use the type of the commitment object itself as the key
+                        desired_level = commitment_order_map.get(type(commitment), -1)
 
-                        if current_index >= desired_index >= 0:
+                        if current_level >= desired_level >= 0:  # Check levels
                             self.logger.info(
                                 f"Transaction {signature} confirmed with status: {current_commitment}"
                             )
@@ -519,7 +511,7 @@ class SolanaClient:
                     f"Timeout waiting for transaction {signature} confirmation."
                 )
 
-            await asyncio.sleep(sleep_seconds)
+            # Removed sleep here as it's unnecessary after confirmation or timeout check
 
     # --- WebSocket Methods ---
 
