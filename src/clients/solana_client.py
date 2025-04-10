@@ -447,6 +447,18 @@ class SolanaClient:
         )
         start_time = time.monotonic()
         while True:
+            # Check timeout first
+            if time.monotonic() - start_time > self.timeout:
+                self.logger.error(
+                    f"Timeout waiting for transaction {signature} confirmation."
+                )
+                raise asyncio.TimeoutError(
+                    f"Timeout waiting for transaction {signature} confirmation."
+                )
+
+            # Wait before checking status
+            await asyncio.sleep(sleep_seconds)
+
             try:
                 status_resp = await self._make_rpc_call_with_retry(
                     self.rpc_client.get_signature_statuses, [signature]
@@ -517,17 +529,8 @@ class SolanaClient:
                 )
                 raise  # Propagate RPC errors
 
-            await asyncio.sleep(0)  # Yield control before timeout check
-            # Check timeout
-            if time.monotonic() - start_time > self.timeout:
-                self.logger.error(
-                    f"Timeout waiting for transaction {signature} confirmation."
-                )
-                raise asyncio.TimeoutError(
-                    f"Timeout waiting for transaction {signature} confirmation."
-                )
-
-            # Removed sleep here as it's unnecessary after confirmation or timeout check
+            # Timeout check moved to the beginning of the loop
+            # Sleep moved to the beginning of the loop
 
     # --- WebSocket Methods ---
 
@@ -580,7 +583,7 @@ class SolanaClient:
                                     # This structure matches logs_subscribe results
                                     log_data = item.result.value
                                     # self.logger.debug(f"Processing log data: {log_data}")
-                                    await self.log_callback(log_data)
+                                    await self.log_callback(log_data)  # Added await
                                 else:
                                     self.logger.warning(
                                         f"Received unexpected WSS message format: {item}"
@@ -633,8 +636,12 @@ class SolanaClient:
 
         self.log_callback = callback
         mentions = [str(pid) for pid in self.monitored_program_ids]
+        # Use commitment.value for consistent lowercase string representation
+        commitment_str = (
+            commitment.value if hasattr(commitment, "value") else str(commitment)
+        )
         self.logger.info(
-            f"Starting log subscription for programs mentioned: {mentions} with commitment {commitment}"
+            f"Starting log subscription for programs mentioned: {mentions} with commitment {commitment_str}"
         )
 
         try:
