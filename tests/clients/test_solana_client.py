@@ -1339,21 +1339,26 @@ class TestSolanaClient:
         await client.connect_wss()
         mock_log_callback.side_effect = ValueError("Callback error")
         client.log_callback = mock_log_callback
+# Configure the mock protocol's __aiter__ to yield one message then yield control
+async def msg_generator():
+    yield mock_wss_message
+    await asyncio.sleep(0) # Yield control to allow callback processing
+    # Stop iteration
 
-        # Configure the mock protocol's __aiter__ to yield the message
-        async def msg_generator():
-            yield mock_wss_message
-            await asyncio.sleep(0.01)
-
-        mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
-        # Run the processor in a task, wait briefly, then cancel
-        process_task = asyncio.create_task(client._process_log_messages())
-        await asyncio.sleep(0.1)  # Allow time for message processing
+mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
+        # Run the processor task and await its completion (it should finish after one message)
+    process_task = asyncio.create_task(client._process_log_messages()) # Correct indentation
+    try:
+        # Wait a short time to ensure the task processes the single message
+        await asyncio.wait_for(process_task, timeout=0.1)
+    except asyncio.TimeoutError:
+        # If it times out, the loop might be stuck, cancel it
         process_task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await process_task
-        except asyncio.CancelledError:
-            pass  # Expected cancellation
+    except asyncio.CancelledError:
+        # Task might be cancelled if it finishes very quickly
+        pass
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
         client.logger.exception.assert_called_with(
