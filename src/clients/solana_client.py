@@ -15,7 +15,7 @@ from solders.rpc.responses import (
     SimulateTransactionResp,
     SendTransactionResp,
 )
-from solders.transaction import TransactionError, VersionedTransaction
+from solders.transaction import TransactionError
 from solders.transaction_status import TransactionConfirmationStatus
 from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 from solders.message import MessageV0  # Use MessageV0
@@ -464,22 +464,38 @@ class SolanaClient:
 
                     current_commitment = status.confirmation_status
                     if current_commitment:
-                        # Revert to map/type comparison (Attempt 6)
-                        commitment_map = {
-                            TransactionConfirmationStatus.Processed: 0,  # Assign order
-                            TransactionConfirmationStatus.Confirmed: 1,
-                            TransactionConfirmationStatus.Finalized: 2,
-                        }
-                        commitment_order_map = {
-                            Confirmed: 1,
-                            Finalized: 2,
-                        }
+                        # Compare commitment levels based on their string values and order (Attempt 7)
+                        commitment_order = ["processed", "confirmed", "finalized"]
+                        try:
+                            # Get the string value of the desired commitment (e.g., "confirmed")
+                            # Commitment objects like Confirmed("confirmed") have a string value
+                            desired_commitment_str = str(
+                                commitment
+                            )  # Use str() for Commitment objects
+                            desired_index = commitment_order.index(
+                                desired_commitment_str
+                            )
+                        except (AttributeError, ValueError):  # Handle potential errors
+                            self.logger.warning(
+                                f"Invalid desired commitment level: {commitment}"
+                            )
+                            desired_index = -1
 
-                        current_level = commitment_map.get(current_commitment, -1)
-                        # Use the type of the commitment object itself as the key
-                        desired_level = commitment_order_map.get(type(commitment), -1)
+                        try:
+                            # Get the string value of the current commitment status Enum (e.g., "confirmed")
+                            current_commitment_str = (
+                                current_commitment.value
+                            )  # Use .value for Enum
+                            current_index = commitment_order.index(
+                                current_commitment_str
+                            )
+                        except (AttributeError, ValueError):
+                            self.logger.warning(
+                                f"Unknown current commitment status: {current_commitment}"
+                            )
+                            current_index = -1  # Treat unknown as lower level
 
-                        if current_level >= desired_level >= 0:  # Check levels
+                        if current_index >= desired_index >= 0:
                             self.logger.info(
                                 f"Transaction {signature} confirmed with status: {current_commitment}"
                             )
