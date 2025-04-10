@@ -1358,6 +1358,8 @@ class TestSolanaClient:
         # Run the processor task and await its completion (it should finish after one message)
         # Run the processor task and await its completion
         # It should exit after receiving one message and hitting CancelledError
+        # Run the processor task and await its completion
+        # It should exit after receiving one message and hitting CancelledError
         process_task = asyncio.create_task(client._process_log_messages())
         try:
             await asyncio.wait_for(process_task, timeout=0.2)  # Wait slightly longer
