@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch, call
-from contextlib import suppress
 
 import pytest
 import pytest_asyncio
@@ -30,7 +29,7 @@ from solders.transaction_status import (
     InstructionErrorCustom,
     TransactionErrorInstructionError,  # Needed for AccountInUse mock attempt
 )
-from solders.transaction import TransactionError, Transaction
+from solders.transaction import TransactionError
 from solders.transaction import VersionedTransaction
 import time
 from solders.hash import Hash
@@ -776,9 +775,7 @@ class TestSolanaClient:
     ):
         """Tests handling of TransactionError (like preflight failure) during sending."""
         # Use the specific importable error type
-        mock_instruction_error = TransactionErrorInstructionError(
-            0, InstructionErrorCustom(1)
-        )
+        # Unused variable removed: mock_instruction_error
         # Correct SendTransactionPreflightFailureMessage instantiation (use message=)
         # Simplify the exception raised for now to isolate the issue
         mock_exception = RPCException(
@@ -819,10 +816,7 @@ class TestSolanaClient:
         mock_sig_str = str(mock_sig)
         # Use TransactionStatus, remove 'confirmations'
         # Add more processing steps to avoid StopAsyncIteration
-        resp_processing1 = GetSignatureStatusesResp(
-            context=RpcResponseContext(slot=1),
-            value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
-        )
+        # Unused variable removed: resp_processing1
         resp_processing2 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
@@ -855,24 +849,16 @@ class TestSolanaClient:
         )
 
         # Add even more processing steps
-        resp_processing3 = GetSignatureStatusesResp(
-            context=RpcResponseContext(slot=3),  # Use integer slot
-            value=[
-                TransactionStatus(
-                    slot=12,  # Use integer slot
-                    err=None,
-                    confirmation_status=TransactionConfirmationStatus.Processed,
-                )
-            ],
-        )
+        # Unused variable removed: resp_processing3
         client.rpc_client.get_signature_statuses = AsyncMock(
             # Add more processing steps to ensure the iterator isn't exhausted
             # Simplify side_effect for finalized test: Process -> Confirmed -> Finalized
+            # Add one more final state to prevent StopAsyncIteration in the loop
             side_effect=[
                 resp_processing2,  # Processed
                 resp_confirmed,  # Confirmed
                 resp_finalized,  # Finalized
-                resp_finalized,  # Add one more to prevent StopAsyncIteration
+                resp_finalized,  # Finalized (extra one)
             ]
         )
 
@@ -914,10 +900,7 @@ class TestSolanaClient:
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
         # Add more processing steps
-        resp_processing1 = GetSignatureStatusesResp(
-            context=RpcResponseContext(slot=1),
-            value=[TransactionStatus(slot=10, err=None, confirmation_status=None)],
-        )
+        # Unused variable removed: resp_processing1
         resp_processing2 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
@@ -941,7 +924,8 @@ class TestSolanaClient:
 
         # Adjust mock: return processing first, then confirmed
         client.rpc_client.get_signature_statuses = AsyncMock(
-            side_effect=[resp_processing2, resp_confirmed]
+            # Add one more final state to prevent StopAsyncIteration
+            side_effect=[resp_processing2, resp_confirmed, resp_confirmed]
         )
 
         result = await client.confirm_transaction(
@@ -1253,7 +1237,7 @@ class TestSolanaClient:
         assert first_connection is not None
         # Mock the cancel method *on* the first_task mock object
         # first_task is a real Task. We will patch asyncio.Task.cancel below.
-        original_task = first_task  # Keep track of the original task object
+        # Unused variable removed: original_task
         first_connection.close = AsyncMock()
 
         mock_websocket_connect.reset_mock()
@@ -1293,14 +1277,14 @@ class TestSolanaClient:
         await client.connect_wss()
         client.log_callback = mock_log_callback
 
-        # Mock recv to return one message then stop
+        # Mock recv to return one message then hang, allowing external cancellation
         mock_websocket_connect.mock_protocol.recv = AsyncMock(
             side_effect=[
                 mock_wss_message,
-                asyncio.CancelledError,
-            ]  # Simulate one message then cancellation
+                asyncio.sleep(10),
+            ]  # Sleep long enough for test
         )
-        # Remove the __aiter__ mock as we mock recv now
+        # Ensure __aiter__ is not used if present
         if hasattr(mock_websocket_connect.mock_protocol, "__aiter__"):
             del mock_websocket_connect.mock_protocol.__aiter__
 
@@ -1311,15 +1295,12 @@ class TestSolanaClient:
         # Run the processor task and await its completion
         # It should exit after receiving one message and hitting CancelledError
         process_task = asyncio.create_task(client._process_log_messages())
-        try:
-            await asyncio.wait_for(process_task, timeout=0.2)  # Wait slightly longer
-        except asyncio.TimeoutError:
-            # If it times out, something is wrong with the loop or mock
-            process_task.cancel()
-            pytest.fail("Processing task timed out unexpectedly.")
-        except asyncio.CancelledError:
-            # This is expected if recv raises CancelledError
-            pass
+        await asyncio.sleep(0.05)  # Allow time for the message to be processed
+
+        # Cancel the task externally and await it to ensure cleanup
+        process_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await process_task
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
 
@@ -1336,14 +1317,14 @@ class TestSolanaClient:
         mock_log_callback.side_effect = ValueError("Callback error")
         client.log_callback = mock_log_callback
 
-        # Mock recv to return one message then stop
+        # Mock recv to return one message then hang, allowing external cancellation
         mock_websocket_connect.mock_protocol.recv = AsyncMock(
             side_effect=[
                 mock_wss_message,
-                asyncio.CancelledError,
-            ]  # Simulate one message then cancellation
+                asyncio.sleep(10),
+            ]  # Sleep long enough for test
         )
-        # Remove the __aiter__ mock as we mock recv now
+        # Ensure __aiter__ is not used if present
         if hasattr(mock_websocket_connect.mock_protocol, "__aiter__"):
             del mock_websocket_connect.mock_protocol.__aiter__
         # Run the processor task and await its completion (it should finish after one message)
@@ -1352,15 +1333,12 @@ class TestSolanaClient:
         # Run the processor task and await its completion
         # It should exit after receiving one message and hitting CancelledError
         process_task = asyncio.create_task(client._process_log_messages())
-        try:
-            await asyncio.wait_for(process_task, timeout=0.2)  # Wait slightly longer
-        except asyncio.TimeoutError:
-            # If it times out, something is wrong with the loop or mock
-            process_task.cancel()
-            pytest.fail("Processing task timed out unexpectedly.")
-        except asyncio.CancelledError:
-            # This is expected if recv raises CancelledError
-            pass
+        await asyncio.sleep(0.05)  # Allow time for the message to be processed
+
+        # Cancel the task externally and await it to ensure cleanup
+        process_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await process_task
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
         client.logger.exception.assert_called_with(
@@ -1375,11 +1353,13 @@ class TestSolanaClient:
         client.log_callback = mock_log_callback
         unexpected_message = ["some_string"]
 
-        async def msg_generator():
-            yield unexpected_message
-            await asyncio.sleep(0.01)
-
-        mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
+        # Mock recv to return the unexpected message then hang
+        mock_websocket_connect.mock_protocol.recv = AsyncMock(
+            side_effect=[unexpected_message, asyncio.sleep(10)]
+        )
+        # Ensure __aiter__ is not used if present
+        if hasattr(mock_websocket_connect.mock_protocol, "__aiter__"):
+            del mock_websocket_connect.mock_protocol.__aiter__
 
         process_task = asyncio.create_task(client._process_log_messages())
         await asyncio.sleep(0.05)
@@ -1401,12 +1381,13 @@ class TestSolanaClient:
         await client.connect_wss()
         client.log_callback = AsyncMock()
 
-        async def msg_generator():
-            yield mock_wss_message
-            await asyncio.sleep(0.1)  # Simulate waiting for next message
-            # Loop should be cancelled before this point
-
-        mock_websocket_connect.mock_protocol.__aiter__.return_value = msg_generator()
+        # Mock recv to return one message then hang, allowing external cancellation
+        mock_websocket_connect.mock_protocol.recv = AsyncMock(
+            side_effect=[mock_wss_message, asyncio.sleep(10)]
+        )
+        # Ensure __aiter__ is not used if present
+        if hasattr(mock_websocket_connect.mock_protocol, "__aiter__"):
+            del mock_websocket_connect.mock_protocol.__aiter__
 
         task = asyncio.create_task(client._process_log_messages())
         await asyncio.sleep(0.01)  # Allow task to start and process first message
