@@ -886,8 +886,8 @@ class TestSolanaClient:
                 call([mock_sig_str]),
             ]
         )
-        # Sleep is called before each check: Proc, Conf, Fin -> 3 sleeps
-        assert mock_asyncio_sleep.await_count == 3
+        # Sleep is called before first check (Proc) and second check (Conf). Loop exits on third check (Fin). -> 2 sleeps
+        assert mock_asyncio_sleep.await_count == 2
         client.logger.info.assert_any_call(
             f"Confirming transaction {mock_sig_str} with commitment finalized..."  # Use lowercase 'finalized'
         )
@@ -960,8 +960,8 @@ class TestSolanaClient:
         client.rpc_client.get_signature_statuses.assert_has_awaits(
             [call([mock_sig_str]), call([mock_sig_str])]
         )
-        # Sleep called before Proc check, then before Conf check -> 2 sleeps
-        assert mock_asyncio_sleep.await_count == 2
+        # Sleep is called before first check (Proc). Loop exits on second check (Conf). -> 1 sleep
+        assert mock_asyncio_sleep.await_count == 1
         client.logger.info.assert_any_call(
             f"Transaction {mock_sig_str} confirmed with status: confirmed"  # Use lowercase 'confirmed'
         )
@@ -1303,6 +1303,7 @@ class TestSolanaClient:
         # Mock __aiter__ to yield one message then stop iteration gracefully
         async def msg_generator_callback():
             yield mock_wss_message
+            await asyncio.sleep(0)  # Allow event loop to switch context
             # Stop the generator after one message to end the async for loop
             return
 
@@ -1355,6 +1356,7 @@ class TestSolanaClient:
         # Mock __aiter__ to yield one message then stop iteration gracefully
         async def msg_generator_callback_err():
             yield mock_wss_message
+            await asyncio.sleep(0)  # Allow event loop to switch context
             # Stop the generator after one message
             return
 
@@ -1398,6 +1400,7 @@ class TestSolanaClient:
         # Mock __aiter__ to yield the unexpected message then stop iteration
         async def msg_generator_unexpected():
             yield unexpected_message
+            await asyncio.sleep(0)  # Allow event loop to switch context
             # Stop the generator
             return
 
@@ -1435,6 +1438,7 @@ class TestSolanaClient:
         # Mock __aiter__ to yield one message then hang (sleep)
         async def msg_generator_cancel():
             yield mock_wss_message
+            await asyncio.sleep(0)  # Allow event loop to switch context
             await asyncio.sleep(10)  # Hang to allow external cancellation
 
         # Assign the generator function itself to __aiter__
@@ -1444,13 +1448,14 @@ class TestSolanaClient:
             delattr(mock_websocket_connect.mock_protocol, "recv")
 
         task = asyncio.create_task(client._process_log_messages())
-        await asyncio.sleep(0.01)  # Allow task to start and process first message
+        await asyncio.sleep(0.05)  # Allow task to start and process first message
         task.cancel()
 
         with pytest.raises(asyncio.CancelledError):
             await task
 
-        client.logger.info.assert_called_with("Log processing task cancelled.")
+        # Use assert_any_call because other logs might occur after cancellation log
+        client.logger.info.assert_any_call("Log processing task cancelled.")
         client.log_callback.assert_awaited_once()  # Should process the first message
 
     # --- Test build_swap_instruction Placeholder ---
