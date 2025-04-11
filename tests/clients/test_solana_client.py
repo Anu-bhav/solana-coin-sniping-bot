@@ -29,7 +29,7 @@ from solders.transaction_status import (
     InstructionErrorCustom,
     TransactionErrorInstructionError,  # Needed for AccountInUse mock attempt
 )
-from solders.transaction import TransactionError  # Removed unused Transaction import
+from solders.transaction import TransactionError
 from solders.transaction import VersionedTransaction
 import time
 from solders.hash import Hash
@@ -776,7 +776,7 @@ class TestSolanaClient:
     ):
         """Tests handling of TransactionError (like preflight failure) during sending."""
         # Use the specific importable error type
-        # Unused variable removed: mock_instruction_error (originally TransactionErrorInstructionError(0, InstructionErrorCustom(1)))
+        # Unused variable removed: mock_instruction_error
         # Correct SendTransactionPreflightFailureMessage instantiation (use message=)
         # Simplify the exception raised for now to isolate the issue
         mock_exception = RPCException(
@@ -1253,7 +1253,7 @@ class TestSolanaClient:
         assert first_connection is not None
         # Mock the cancel method *on* the first_task mock object
         # first_task is a real Task. We will patch asyncio.Task.cancel below.
-        # Unused variable removed: original_task (originally first_task)
+        # Unused variable removed: original_task
         first_connection.close = AsyncMock()
 
         mock_websocket_connect.reset_mock()
