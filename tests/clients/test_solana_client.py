@@ -29,7 +29,7 @@ from solders.transaction_status import (
     InstructionErrorCustom,
     TransactionErrorInstructionError,  # Needed for AccountInUse mock attempt
 )
-from solders.transaction import TransactionError
+from solders.transaction import TransactionError  # Removed unused Transaction import
 from solders.transaction import VersionedTransaction
 import time
 from solders.hash import Hash
@@ -775,7 +775,7 @@ class TestSolanaClient:
     ):
         """Tests handling of TransactionError (like preflight failure) during sending."""
         # Use the specific importable error type
-        # Unused variable removed: mock_instruction_error
+        # Unused variable removed: mock_instruction_error (originally TransactionErrorInstructionError(0, InstructionErrorCustom(1)))
         # Correct SendTransactionPreflightFailureMessage instantiation (use message=)
         # Simplify the exception raised for now to isolate the issue
         mock_exception = RPCException(
@@ -816,7 +816,7 @@ class TestSolanaClient:
         mock_sig_str = str(mock_sig)
         # Use TransactionStatus, remove 'confirmations'
         # Add more processing steps to avoid StopAsyncIteration
-        # Unused variable removed: resp_processing1
+        # Unused variable removed: resp_processing1 (originally GetSignatureStatusesResp(...))
         resp_processing2 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
@@ -847,7 +847,7 @@ class TestSolanaClient:
                 )
             ],
         )
-        # Unused variable removed: resp_processing3
+        # Unused variable removed: resp_processing3 (originally GetSignatureStatusesResp(...))
 
         # Use a callable side_effect to handle repeated calls after final state
         finalized_state_reached = False
@@ -857,7 +857,6 @@ class TestSolanaClient:
             if finalized_state_reached:
                 return resp_finalized  # Keep returning finalized
             # Sequence: Processed -> Confirmed -> Finalized
-            # Note: await_count is 1-based for the *next* call
             current_call_count = client.rpc_client.get_signature_statuses.await_count
             if current_call_count == 0:  # First call
                 return resp_processing2
@@ -870,7 +869,8 @@ class TestSolanaClient:
         client.rpc_client.get_signature_statuses = AsyncMock(
             side_effect=side_effect_finalized
         )
-        # The previous diff incorrectly left these lines; this block removes them.
+
+        # time.monotonic patch removed as source code logic is fixed
         result = await client.confirm_transaction(
             mock_sig_str, commitment=Finalized, sleep_seconds=0.05
         )
@@ -909,7 +909,7 @@ class TestSolanaClient:
         mock_sig = Signature.new_unique()
         mock_sig_str = str(mock_sig)
         # Add more processing steps
-        # Unused variable removed: resp_processing1
+        # Unused variable removed: resp_processing1 (originally GetSignatureStatusesResp(...))
         resp_processing2 = GetSignatureStatusesResp(
             context=RpcResponseContext(slot=2),
             value=[
@@ -939,7 +939,6 @@ class TestSolanaClient:
             if confirmed_state_reached:
                 return resp_confirmed  # Keep returning confirmed
             # Sequence: Processed -> Confirmed
-            # Note: await_count is 1-based for the *next* call
             current_call_count = client.rpc_client.get_signature_statuses.await_count
             if current_call_count == 0:  # First call
                 return resp_processing2
@@ -951,6 +950,7 @@ class TestSolanaClient:
             side_effect=side_effect_confirmed
         )
 
+        # time.monotonic patch removed as source code logic is fixed
         result = await client.confirm_transaction(
             mock_sig_str, commitment=Confirmed, sleep_seconds=0.05
         )
@@ -1260,7 +1260,7 @@ class TestSolanaClient:
         assert first_connection is not None
         # Mock the cancel method *on* the first_task mock object
         # first_task is a real Task. We will patch asyncio.Task.cancel below.
-        # Unused variable removed: original_task
+        # Unused variable removed: original_task (originally first_task)
         first_connection.close = AsyncMock()
 
         mock_websocket_connect.reset_mock()
@@ -1300,13 +1300,13 @@ class TestSolanaClient:
         await client.connect_wss()
         client.log_callback = mock_log_callback
 
-        # Mock __aiter__ to yield one message then raise CancelledError
+        # Mock __aiter__ to yield one message then stop iteration gracefully
         async def msg_generator_callback():
             yield mock_wss_message
-            # Simulate the connection closing or loop ending after one message
-            raise asyncio.CancelledError("Simulating end after one message")
+            # Stop the generator after one message to end the async for loop
+            return
 
-        # Assign the generator function itself, not its result
+        # Assign the generator function itself to __aiter__
         mock_websocket_connect.mock_protocol.__aiter__ = msg_generator_callback
         # Ensure recv is not mocked if it exists
         if hasattr(mock_websocket_connect.mock_protocol, "recv"):
@@ -1326,16 +1326,16 @@ class TestSolanaClient:
         # It should exit gracefully after processing the message and hitting CancelledError
         # Run the processor task and await its completion
         # It should exit gracefully after processing the message and hitting CancelledError
+        # Run the processor task and await its completion
+        # It should exit gracefully after processing the message
         process_task = asyncio.create_task(client._process_log_messages())
         try:
-            # Wait slightly longer to ensure the task runs and hits the CancelledError
+            # Wait for the task to finish naturally
             await asyncio.wait_for(process_task, timeout=0.3)
         except asyncio.TimeoutError:
             process_task.cancel()  # Clean up if it times out
             pytest.fail("Processing task timed out unexpectedly.")
-        except asyncio.CancelledError:
-            # This is the expected way the mock generator stops the loop
-            pass
+        # No CancelledError expected here as the generator finishes
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
 
@@ -1352,13 +1352,13 @@ class TestSolanaClient:
         mock_log_callback.side_effect = ValueError("Callback error")
         client.log_callback = mock_log_callback
 
-        # Mock __aiter__ to yield one message then raise CancelledError
+        # Mock __aiter__ to yield one message then stop iteration gracefully
         async def msg_generator_callback_err():
             yield mock_wss_message
-            # Simulate the connection closing or loop ending after one message
-            raise asyncio.CancelledError("Simulating end after one message")
+            # Stop the generator after one message
+            return
 
-        # Assign the generator function itself, not its result
+        # Assign the generator function itself to __aiter__
         mock_websocket_connect.mock_protocol.__aiter__ = msg_generator_callback_err
         # Ensure recv is not mocked if it exists
         if hasattr(mock_websocket_connect.mock_protocol, "recv"):
@@ -1372,16 +1372,15 @@ class TestSolanaClient:
         # Run the processor task and await its completion
         # Run the processor task and await its completion
         # Run the processor task and await its completion
+        # Run the processor task and await its completion
         process_task = asyncio.create_task(client._process_log_messages())
         try:
-            # Wait slightly longer to ensure the task runs and hits the CancelledError
+            # Wait for the task to finish naturally
             await asyncio.wait_for(process_task, timeout=0.3)
         except asyncio.TimeoutError:
             process_task.cancel()  # Clean up if it times out
             pytest.fail("Processing task timed out unexpectedly.")
-        except asyncio.CancelledError:
-            # This is the expected way the mock generator stops the loop
-            pass
+        # No CancelledError expected here
 
         mock_log_callback.assert_awaited_once_with(mock_log_data)
         client.logger.exception.assert_called_with(
@@ -1396,13 +1395,13 @@ class TestSolanaClient:
         client.log_callback = mock_log_callback
         unexpected_message = ["some_string"]
 
-        # Mock __aiter__ to yield the unexpected message then raise CancelledError
+        # Mock __aiter__ to yield the unexpected message then stop iteration
         async def msg_generator_unexpected():
             yield unexpected_message
-            # Simulate the connection closing or loop ending after one message
-            raise asyncio.CancelledError("Simulating end after one message")
+            # Stop the generator
+            return
 
-        # Assign the generator function itself, not its result
+        # Assign the generator function itself to __aiter__
         mock_websocket_connect.mock_protocol.__aiter__ = msg_generator_unexpected
         # Ensure recv is not mocked if it exists
         if hasattr(mock_websocket_connect.mock_protocol, "recv"):
@@ -1412,15 +1411,14 @@ class TestSolanaClient:
         # Run the processor task and await its completion
         # Run the processor task and await its completion
         # Run the processor task and await its completion
+        # Run the processor task and await its completion
         try:
-            # Wait slightly longer to ensure the task runs and hits the CancelledError
+            # Wait for the task to finish naturally
             await asyncio.wait_for(process_task, timeout=0.3)
         except asyncio.TimeoutError:
             process_task.cancel()  # Clean up if it times out
             pytest.fail("Processing task timed out unexpectedly.")
-        except asyncio.CancelledError:
-            # This is the expected way the mock generator stops the loop
-            pass
+        # No CancelledError expected here
 
         mock_log_callback.assert_not_awaited()
         client.logger.warning.assert_any_call(
@@ -1439,7 +1437,7 @@ class TestSolanaClient:
             yield mock_wss_message
             await asyncio.sleep(10)  # Hang to allow external cancellation
 
-        # Assign the generator function itself, not its result
+        # Assign the generator function itself to __aiter__
         mock_websocket_connect.mock_protocol.__aiter__ = msg_generator_cancel
         # Ensure recv is not mocked if it exists
         if hasattr(mock_websocket_connect.mock_protocol, "recv"):

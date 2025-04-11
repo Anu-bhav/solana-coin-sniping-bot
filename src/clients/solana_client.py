@@ -476,42 +476,29 @@ class SolanaClient:
 
                     current_commitment = status.confirmation_status
                     if current_commitment:
-                        # Compare commitment levels based on their string values and order (Attempt 7)
-                        commitment_order = ["processed", "confirmed", "finalized"]
-                        try:
-                            # Get the string value of the desired commitment (e.g., "confirmed")
-                            # Commitment objects like Confirmed("confirmed") have a string value
-                            desired_commitment_str = str(
-                                commitment
-                            )  # Use str() for Commitment objects
-                            desired_index = commitment_order.index(
-                                desired_commitment_str
-                            )
-                        except (AttributeError, ValueError):  # Handle potential errors
-                            self.logger.warning(
-                                f"Invalid desired commitment level: {commitment}"
-                            )
-                            desired_index = -1
+                        # Simpler commitment comparison using Enum values directly
+                        target_status = None
+                        if commitment == Finalized:
+                            target_status = TransactionConfirmationStatus.Finalized
+                        elif commitment == Confirmed:
+                            # If target is Confirmed, Finalized also counts
+                            if current_commitment in [
+                                TransactionConfirmationStatus.Confirmed,
+                                TransactionConfirmationStatus.Finalized,
+                            ]:
+                                self.logger.info(
+                                    f"Transaction {signature} confirmed with status: {current_commitment}"
+                                )
+                                return True
+                        # Add Processed if needed, though usually Confirmed or Finalized is desired
+                        # elif commitment == Processed:
+                        #     target_status = TransactionConfirmationStatus.Processed
 
-                        try:
-                            # Get the string value of the current commitment status Enum (e.g., "confirmed")
-                            current_commitment_str = (
-                                current_commitment.value
-                            )  # Use .value for Enum
-                            current_index = commitment_order.index(
-                                current_commitment_str
-                            )
-                        except (AttributeError, ValueError):
-                            self.logger.warning(
-                                f"Unknown current commitment status: {current_commitment}"
-                            )
-                            current_index = -1  # Treat unknown as lower level
-
-                        if current_index >= desired_index >= 0:
+                        if target_status and current_commitment == target_status:
                             self.logger.info(
                                 f"Transaction {signature} confirmed with status: {current_commitment}"
                             )
-                            return True  # Confirmed
+                            return True  # Confirmed at the exact level
 
                     self.logger.debug(
                         f"Transaction {signature} status: {current_commitment or 'Processing'}. Waiting..."
